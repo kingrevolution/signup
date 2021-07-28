@@ -1,0 +1,312 @@
+Index: libs/model.php
+===================================================================
+--- libs/model.php	(revision 18405)
++++ libs/model.php	(working copy)
+@@ -311,6 +311,11 @@
+ 			$output['template'] = empty($GLOBALS['template']) ? 'default' : $GLOBALS['template'];
+ 			$output['ownerbatch'] = isset($_SESSION['ownerbatch']) ? $_SESSION['ownerbatch'] : '{}';
+ 			$output['sms_providers'] = array('CSoft','Twilio','MessageMedia','Nexmo','Infobip','Macrotechnology','Clubtexting');
++			$output['cus_login_sources'] = array(
++				'email' => $GLOBALS['text']['CUS_LOGIN_SOURCE_EMAIL'],
++				'firstname_lastname' => $GLOBALS['text']['CUS_LOGIN_SOURCE_FIRST_LAST_NAME'],
++				'email_rand_digits' => $GLOBALS['text']['CUS_LOGIN_SOURCE_EMAIL_RAND'],
++			);
+ 			$output['countries'] = SignupHelper::GetStates();
+ 
+ 			$templates = scandir('templates/');
+Index: libs/submit.php
+===================================================================
+--- libs/submit.php	(revision 18405)
++++ libs/submit.php	(working copy)
+@@ -746,10 +746,21 @@
+ 		$city,$state,$zip,$country,$note,$cont1,$phone1,$fax,$phone2,$cont2,$email,$i_time_zone,$midinit;
+ 
+ 		$subscriber = $set_package['subscriber'];
++		$cus_login_source = !empty($set_package['cus_login_source']) ? $set_package['cus_login_source'] : 'email';
++		if ($cus_login_source == 'email') {
++			$cust_login = preg_replace("%[^a-z\d\-_@\.]%i", '',$email);
++		} elseif ($cus_login_source == 'firstname_lastname') {
++			$cust_login = $firstname . '_' . $lastname;
++			$cust_login = strtolower(str_replace(' ', '_', $cust_login));
++		} elseif ($cus_login_source == 'email_rand_digits') {
++			$cust_login = preg_replace("%[^a-z\d\-_@\.]%i", '',$email) . '_' . rand(1000,9999);
++		}
++		if (strlen($cust_login) > 40) {
++			$cust_login = 'Customer-'.time();
++		}
+ 		$balance = empty($subscriber['opening_balance_c']) ? 0 : $subscriber['opening_balance_c'];
+ 		$customer_type = !empty($subscriber['i_customer_r']) ? $subscriber['i_customer_r'] : NULL;
+ 
+-		$cust_login = preg_replace("%[^a-z\d\-_@\.]%i", '',$email);
+ 		$cust_pass = self::generatePassword(8);
+ 		$customer_info = array(
+ 			'name' => 'signup-'.time(),
+@@ -885,15 +896,17 @@
+ 			global $customer_info;
+ 
+ 			$lang_list = SignupHelper::GetInterfaceLangs();
+-			if (strlen($customer_info["email"]) < 31) {
+-				$customer_name = 'Customer-'.$customer_info["email"];
++			$customer_name = $customer_info["firstname"] . " " . $customer_info["lastname"];
++			if (strlen($customer_name) > 31 && strlen($customer_name) < 40) {
++				$customer_name = $customer_info["lastname"];
+ 			}
+-			elseif (strlen($customer_info["email"]) > 31 && strlen($customer_info["email"]) < 41 ) {
+-				$customer_name = $customer_info["email"];
+-			}
+-			else{
++			if (strlen($customer_name) > 40) {
+ 				$customer_name = 'Customer-'.time();
+ 			}
++			if (!empty($set_package['cus_login_source']) && $set_package['cus_login_source'] == 'email_rand_digits') {
++				$customer_name = $customer_info['login'];
++			}
++
+ 			$CustomerInfo = array (
+ 					'name' => $customer_name,
+ 					'i_customer' => $i_customer,
+@@ -1008,7 +1021,7 @@
+ 			'i_account_balance_control_type' => empty($subscriber['i_account_balance_control_type']) ? 3 : $subscriber['i_account_balance_control_type'],
+ 			'opening_balance' => empty($subscriber['opening_balance_a']) ? 0 : $subscriber['opening_balance_a'],
+ 			'credit_limit' => isset($subscriber['credit_limit_a']) ? $subscriber['credit_limit_a'] : '',
+-			'login' => preg_replace("%[^a-z\d\-_@\.]%i", '',$email),
++			'login' => $number,
+ 			'password' => self::generatePassword(8),
+ 			'h323_password' => $voip_pass,
+ 			'i_acl' => $subscriber['acl_a'],
+Index: locale/en/en_wizard.ini
+===================================================================
+--- locale/en/en_wizard.ini	(revision 18405)
++++ locale/en/en_wizard.ini	(working copy)
+@@ -179,3 +179,8 @@
+ SMTP_USER_DESC="Username that will be used during SMTP server authorization"
+ SMTP_PWD="SMTP Password"
+ SMTP_PWD_DESC="Username's password"
++CUS_LOGIN_SOURCE="Customer Self-care Portal Login Source"
++CUS_LOGIN_SOURCE_DESC="Possible values: Email, Firstname_Lastname, Email_XXX where XXX is a set of random digits - will allow using the same email address for multiple signup attempts, recommended while testing the signup form. The default value is Email."
++CUS_LOGIN_SOURCE_EMAIL="Email Address"
++CUS_LOGIN_SOURCE_FIRST_LAST_NAME="First Name and Last Name (snake case)"
++CUS_LOGIN_SOURCE_EMAIL_RAND="Email Address plus Random Digits"
+Index: locale/es/es_wizard.ini
+===================================================================
+--- locale/es/es_wizard.ini	(revision 18405)
++++ locale/es/es_wizard.ini	(working copy)
+@@ -237,3 +237,8 @@
+ PROMO_CODES_FUNC_DESC="Las siguientes son las opciones a seleccionar al momento:</br>1) Si el cliente solamente quisiera ofrecer fondos adicionales: se define solo el nombre del cliente con vales(voucher) disponibles (vale de balance - la cantidad en la cual el pago se efectura)</br>2) Si el cliente quisiera proveer descuentos para algunos destinos: Se define el nombre del cliente (o cualquier cosa que se debe utilizar como un codigo) y establecer i_vd_plan (tenga en cuenta que la moneda de la nueva cuenta debe coincidir con la moneda del descuento de lo contrario no se le asignara el descuento)</br>3) Ambas opciones activadas (fondos + descuento): definir el cliente que es propietario de los vales de promocion, i_vd_plan y marque la casilla de verificacion.</br> Podra especificar las siguientes opciones:</br>Descuento - i_vd_plan (usted lo puede encontrar si se pasa el cursor sobre el plan de descuento requerido);</br>Promo - es el codigo que el cliente debe ingresar (esto es el nombre del cliente con el vale disponible);</br>Cupones - casilla de verificacion (es utilizada para diferenciar la funcionalidad porporcionada).</br>Despues de la transferencia exitosa de dinero , se dara por terminado el vale. El clientre podra controlar la disponibilid del vale con su 'Periodo de Vida '. En caso de que algun vale este expirado este sera omitido y el siguiente sera tomado."
+ RESULT_DESC="Informacion adicional que se mostrara en la pagina de resultados. <br />* Enlace para el Softphone - el vinculo con el instalador para el softphone. <br />* Notas adicionales - la informacion se mostrara en la parte inferior de la pagina de resultados."
+ STRIPE_PENDING_TEXT="Mensaje enviado en caso de que Stripe requiera 3D Secure"
++CUS_LOGIN_SOURCE="Cómo crear un inicio de sesión para el portal de autocuidado"
++CUS_LOGIN_SOURCE_DESC="Valores posibles: Email, Firstname_Lastname, Email_XXX donde XXX es un conjunto de dígitos aleatorios - permitirá usar la misma dirección de correo electrónico para múltiples intentos de registro, recomendado al probar el formulario de registro. El valor predeterminado es Correo electrónico."
++CUS_LOGIN_SOURCE_EMAIL="Dirección de correo electrónico"
++CUS_LOGIN_SOURCE_FIRST_LAST_NAME="Nombre y apellido (caso de serpiente)"
++CUS_LOGIN_SOURCE_EMAIL_RAND="Email Address plus Random Digits"
+Index: locale/fr/fr_wizard.ini
+===================================================================
+--- locale/fr/fr_wizard.ini	(revision 18405)
++++ locale/fr/fr_wizard.ini	(working copy)
+@@ -163,3 +163,8 @@
+ RESULT_DESC="Les renseignements complémentaires seront affichés sur la page de résultat. <br /> * lien Soft-phone - le lien vers le programme d'installation du logiciel de téléphonie. <br /> * Notes supplémentaires - les informations qui seront affichées au bas de la page de résultats."
+ PAYPAL_PENDING_TEXT="Texte d'un message envoyé en cas de paiement PayPal statut en attente"
+ STRIPE_PENDING_TEXT="Message envoyé au cas où Stripe nécessite 3D Secure"
++CUS_LOGIN_SOURCE="Comment créer un login pour le portail d'auto-soins"
++CUS_LOGIN_SOURCE_DESC="Valeurs possibles : E-mail, Prénom_Nom, E-mail_XXX où XXX est un ensemble de chiffres aléatoires - permettra d'utiliser la même adresse e-mail pour plusieurs tentatives d'inscription, recommandé lors du test du formulaire d'inscription. La valeur par défaut est E-mail."
++CUS_LOGIN_SOURCE_EMAIL="E-mail"
++CUS_LOGIN_SOURCE_FIRST_LAST_NAME="Prénom et nom de famille (cas du serpent)"
++CUS_LOGIN_SOURCE_EMAIL_RAND="E-mail plus chiffres aléatoires"
+Index: locale/ru/ru_wizard.ini
+===================================================================
+--- locale/ru/ru_wizard.ini	(revision 18405)
++++ locale/ru/ru_wizard.ini	(working copy)
+@@ -1,3 +1,8 @@
+ WIZARD="Настройка формы"
+ WAIT="Пожалуйста подождите..."
+-STRIPE_PENDING_TEXT="Сообщение клиенту, если Stripe требует 3D Secure"
+\ No newline at end of file
++STRIPE_PENDING_TEXT="Сообщение клиенту, если Stripe требует 3D Secure"
++CUS_LOGIN_SOURCE="Способ создания логина для портала самообслуживания"
++CUS_LOGIN_SOURCE_DESC="Возможные значения: Email, Firstname_Lastname, Email_XXX, где XXX - это набор случайных цифр - позволит использовать один и тот же адрес электронной почты для нескольких попыток регистрации, рекомендуется при тестировании формы регистрации. Значение по умолчанию - Электронная почта."
++CUS_LOGIN_SOURCE_EMAIL="Электронная почта"
++CUS_LOGIN_SOURCE_FIRST_LAST_NAME="Имя и фамилия в змеином_регистре"
++CUS_LOGIN_SOURCE_EMAIL_RAND="Электронная почта с рандомным числом"
+Index: templates/default/html/wizard.php
+===================================================================
+--- templates/default/html/wizard.php	(revision 18405)
++++ templates/default/html/wizard.php	(working copy)
+@@ -302,7 +302,7 @@
+ 					<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-owner"><?php echo $text['CREATE_CUS']; ?></label>
+ 					<div class="col-lg-8 controls text-left">
+ 						<div class="make-switch">
+-							<input type="checkbox" data-callback="id_source_additional('packages-<?php echo $i; ?>-')" class="custom_switcher create-customer" id="packages-<?php echo $i; ?>-owner"<?php if (empty($package['subscriber']['i_customer'])): echo " checked"; endif; ?> data-target='["packages-<?php echo $i; ?>-hidden-owner"]'>
++							<input type="checkbox" data-callback="id_source_additional('packages-<?php echo $i; ?>-')" class="custom_switcher create-customer" id="packages-<?php echo $i; ?>-owner"<?php if (empty($package['subscriber']['i_customer'])): echo " checked"; endif; ?> data-target='["packages-<?php echo $i; ?>-hidden-owner","packages-<?php echo $i; ?>-cus-login-source"]'>
+ 						</div>
+ 					</div>
+ 					<div id="packages-<?php echo $i; ?>-hidden-owner" data-search="packages-<?php echo $i; ?>-val-owner">
+@@ -309,6 +309,16 @@
+ 						<input type="hidden"<?php if(!empty($package['subscriber']['i_customer'])): echo ' disabled';endif;?> id="packages-<?php echo $i; ?>-val-owner" name="packages[<?php echo $i; ?>][owner]" value="on" />
+ 					</div>
+ 				</div>
++				<div id="packages-<?php echo $i; ?>-cus-login-source" data-show="true" class="form-group<?php if(empty($package['cus_login_source'])): echo " hidden"; endif;?>" title="<?php echo $text['CUS_LOGIN_SOURCE_DESC'];?>" data-search="packages-<?php echo $i; ?>-cus-login-source-val">
++					<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-cus-login-source-val"><?php echo $text['CUS_LOGIN_SOURCE'];?> <span class="text-danger">*</span></label>
++					<div class="col-lg-8">
++						<select type="text" id="packages-<?php echo $i; ?>-cus-login-source-val" name="packages[<?php echo $i; ?>][cus_login_source]" class="form-control to-clear" <?php if(isset($package['subscriber']['i_customer'])): echo ' disabled';endif;?>>
++							<?php foreach($cus_login_sources as $cus_login_source_val => $cus_login_source_text):?>
++								<?php echo '<option value="'.$cus_login_source_val.'"'.((!empty($package['cus_login_source']) && $package['cus_login_source'] == $cus_login_source_val)?' selected':'').'>'.$cus_login_source_text.'</option>'; ?>
++							<?php endforeach;?>
++						</select>
++					</div>
++				</div>
+ 				<div class="form-group" title="<?php echo $text['CCF_COPY_DESC'];?>">
+ 					<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-ccf_copy" ><?php echo $text['CCF_COPY'];?></label>
+ 					<div class="col-lg-8 controls text-left">
+@@ -911,6 +921,10 @@
+ 					<td><?php echo $text['CREATE_CUS_FULL_DESC'];?></td>
+ 				</tr>
+ 				<tr>
++					<td><?php echo $text['CUS_LOGIN_SOURCE'];?></td>
++					<td><?php echo $text['CUS_LOGIN_SOURCE_DESC'];?></td>
++				</tr>
++				<tr>
+ 					<td><?php echo $text['ACCOUNT_ID_SOURCE'];?></td>
+ 					<td><?php echo $text['ACCOUNT_ID_SOURCE_DESC'];?></td>
+ 				</tr>
+Index: templates/default/js/wizard.js
+===================================================================
+--- templates/default/js/wizard.js	(revision 18405)
++++ templates/default/js/wizard.js	(working copy)
+@@ -386,36 +386,40 @@
+ 	}
+ }
+ 
+-function add_package(el)
++// source refers to the 'Add package' source: 
++// either 'Create from scratch' (data-target="0")
++// or 'Clone package 1', etc. (data-target="packDiv0", data-target="packDiv1")
++function add_package(source)
+ {
+ 	var pack_ids = [],
+-		clear = (el.length > 0) ? false : true,
+-		i = 0;
++		from_scratch = (source.length > 0) ? false : true,
++		last_pack_id = 0;
++		
+ 	$('.package-container').each(function(){
+ 		pack_ids.push(parseInt($(this).attr('id').replace('packDiv','')));
+ 	});
+ 	for (var j in pack_ids)
+ 	{
+-	    if (pack_ids[j] > i)
++	    if (pack_ids[j] > last_pack_id)
+ 	    {
+-	    	i = pack_ids[j];
++	    	last_pack_id = pack_ids[j];
+ 	    }
+ 	}
+-	default_pack = (clear) ? $('#packDiv'+i).clone() : el.clone();
+-	var id = i + 1,
+-		id_old = (!clear) ? parseInt(el.attr('id').replace('packDiv','')) : i;
+-	default_pack.attr('id', 'packDiv' + id);
+-	default_pack.find('h4').html(JS_PACKAGE+' '+(id + 1)+' <span class="btn btn-default btn-sm glyphicon glyphicon-trash remove-button" data-package="packDiv'+id+'"></span>');
+-	default_pack.find('.optional-params').removeClass('hidden');
+-	default_pack.find('.show-optional').addClass('hidden');
+-	default_pack.find('.hide-optional').removeClass('hidden');
+-	default_pack.find('select.didapi_countries').next('.ms-parent').remove(); // remove excessive multiple select
+-	var feedback = default_pack.find('.has-feedback');
++	new_pack = (from_scratch) ? $('#packDiv'+last_pack_id).clone() : source.clone();
++	var id = last_pack_id + 1,
++		id_old = (!from_scratch) ? parseInt(source.attr('id').replace('packDiv','')) : last_pack_id;
++	new_pack.attr('id', 'packDiv' + id);
++	new_pack.find('h4').html(JS_PACKAGE+' '+(id + 1)+' <span class="btn btn-default btn-sm glyphicon glyphicon-trash remove-button" data-package="packDiv'+id+'"></span>');
++	new_pack.find('.optional-params').removeClass('hidden');
++	new_pack.find('.show-optional').addClass('hidden');
++	new_pack.find('.hide-optional').removeClass('hidden');
++	new_pack.find('select.didapi_countries').next('.ms-parent').remove(); // remove excessive multiple select
++	var feedback = new_pack.find('.has-feedback');
+ 	feedback.removeClass('has-success').removeClass('has-error');
+ 	feedback.find('.error-sign, .success-sign, .loader').addClass('hidden');
+-	if(clear)
++	if(from_scratch)
+ 	{
+-		default_pack.find('.select-container').each(function(){
++		new_pack.find('.select-container').each(function(){
+ 			$(this).addClass('hidden');
+ 			$(this).find('.selected-option').val('');
+ 			$(this).find('select').addClass('hidden');
+@@ -423,51 +427,49 @@
+ 			$(this).next('.note').removeClass('hidden');
+ 		});
+ 	}
+-	default_pack.find('input, select, label, div, textarea').each(
+-	function()
+-	{
+-		if(clear)
++	new_pack.find('input, select, label, div, textarea').each(function(){
++		var found_element = this;
++		if(from_scratch)
+ 		{
+-			if($(this).hasClass('to-clear'))
++			if($(found_element).hasClass('to-clear'))
+ 			{
+-				if($(this).hasClass('id_source'))
++				if($(found_element).hasClass('id_source'))
+ 				{
+-					$(this).val('DID');
++					$(found_element).val('DID');
+ 				}
+ 				else
+ 				{
+-					$(this).val('');
++					$(found_element).val('');
+ 				}
+ 			}
+-			if ($(this).hasClass('custom_switcher'))
++			if ($(found_element).hasClass('custom_switcher'))
+ 			{
+-
+-				var parent = $(this).parent();
++				var parent = $(found_element).parent();
+ 				if(parent.hasClass('switch-on'))
+ 				{
+ 					parent.removeClass('switch-on')
+ 						  .addClass('switch-off');
+-					$(this).prop('checked', false);
++					$(found_element).prop('checked', false);
+ 				}
+ 			}
+ 		}
+-		else if($(this).attr('name') !== undefined)
++		else if($(found_element).attr('name') !== undefined)
+ 		{
+-			$(this).val($('#'+($(this).attr('id'))).val());
++			$(found_element).val($('#'+($(found_element).attr('id'))).val());
+ 		}
+-		var attributes = ['id','name','for','data-package','data-search',"data-callback",'data-target'];
++		var attributes = ['id','name','for','data-package','data-search','data-callback','data-target'];
+ 		for (var j in attributes)
+ 		{
+-			if ($(this).attr(attributes[j]) !== undefined)
++			if ($(found_element).attr(attributes[j]) !== undefined)
+ 			{
+ 				var regexp = new RegExp('\\-'+id_old+'\\-', "gi");
+-				$(this).attr(attributes[j], $(this).attr(attributes[j]).replace(regexp,'-'+id+'-').replace('['+id_old+']','['+id+']'));
++				$(found_element).attr(attributes[j], $(found_element).attr(attributes[j]).replace(regexp,'-'+id+'-').replace('['+id_old+']','['+id+']'));
+ 			}
+ 		}
+ 	});
+-	default_pack.insertBefore('#add_package_button');
++	new_pack.insertBefore('#add_package_button');
+ 	$('#add_package_button').prev().find('.make-switch').each(function(){
+-		activate_checkbox($(this).find('.custom_switcher'))
++		activate_checkbox($(this).find('.custom_switcher'));
+ 		$(this).click(function(){
+ 			new_pack_switch($(this).find('.custom_switcher'));
+ 		})
+@@ -610,6 +612,9 @@
+ 		}
+ 	});
+ 	$('.custom_switcher').each(function(){
++		if(this.checked) {
++			activate_checkbox($(this));
++		}
+ 		$(this).change(function(){activate_checkbox($(this));});
+ 	});
+ 	$('#switch-view').change(function(){

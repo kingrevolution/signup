@@ -1,0 +1,45 @@
+Index: locale/en/en_wizard.ini
+===================================================================
+--- locale/en/en_wizard.ini     (revision 16948)
++++ locale/en/en_wizard.ini     (working copy)
+@@ -77,6 +77,10 @@
+ CREATE_CUS_DESC="If enabled each account will be created under a separate customer. Disabled - All accounts will be created under the customer defined in the template account."
+ CREATE_CUS="Create a Customer"
+ ACCOUNT_ID_SOURCE="Account ID Source"
++CCF_COPY="Copy Customer Custom Field Values"
++CCF_COPY_DESC="If enabled, the new subscribed customer will inherit all custom fields values from the template customer"
++ACF_COPY="Copy Account Custom Field Values"
++ACF_COPY_DESC="If enabled, the new subscribed account will inherit all custom fields values from the template account"
+ DID_INV="DID Inventory"
+ DID_API="DID API"
+ ID_GEN="ID Generator"
+Index: locale/es/es_wizard.ini
+===================================================================
+--- locale/es/es_wizard.ini     (revision 16948)
++++ locale/es/es_wizard.ini     (working copy)
+@@ -67,6 +67,10 @@
+ CREATE_CUS_DESC="Si se activa, cada cuenta sera creada como un cliente separado. Si se desactiva, todas las cuentas se crearan debajo del cliente de la plantilla."
+ CREATE_CUS="Crear un Cliente"
+ ACCOUNT_ID_SOURCE="Fuente del ID para la cuenta"
++CCF_COPY = "Copiar valores de campo personalizados del cliente"
++CCF_COPY_DESC = "Si está habilitado, el nuevo cliente suscrito heredará todos los valores de los campos personalizados del cliente de la plantilla"
++ACF_COPY = "Copiar valores de campo personalizados de la cuenta"
++ACF_COPY_DESC = "Si está habilitada, la nueva cuenta suscrita heredará todos los valores de los campos personalizados de la cuenta de plantilla"
+ DID_INV="Inventario de DIDs"
+ DID_API="API de DIDs"
+ ID_GEN="Auto-Generador de IDs"
+Index: locale/fr/fr_wizard.ini
+===================================================================
+--- locale/fr/fr_wizard.ini     (revision 16948)
++++ locale/fr/fr_wizard.ini     (working copy)
+@@ -71,6 +71,10 @@
+ CREATE_CUS_DESC="S'il est activé chaque compte sera créé sous un client distinct. Mobilité - Tous les comptes seront créés sous le client défini dans le compte modèle."
+ CREATE_CUS="Créez un client"
+ ACCOUNT_ID_SOURCE="Numéro du compte source"
++CCF_COPY = "Copier les valeurs des champs personnalisés du client"
++CCF_COPY_DESC = "S'il est activé, le nouveau client abonné héritera de toutes les valeurs de champs personnalisés du modèle client"
++ACF_COPY = "Copier les valeurs des champs personnalisés du compte"
++ACF_COPY_DESC = "S'il est activé, le nouveau compte abonné héritera de toutes les valeurs des champs personnalisés du compte modèle"
+ DID_INV="Inventaire DID"
+ DID_API="DID API"
+ ID_GEN="Générer un nuùéro"

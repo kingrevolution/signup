@@ -1,0 +1,121 @@
+Index: libs/helper.php
+===================================================================
+--- libs/helper.php	(revision 17851)
++++ libs/helper.php	(working copy)
+@@ -10,6 +10,7 @@
+ 
+ 	public static function MakeSoapCall($method=NULL,$type=NULL,$request=NULL,$service_type='')
+ 	{
++		$error = array();
+ 		global $error, $config;
+ 
+ 		static $soap_client;
+@@ -50,7 +51,7 @@
+ 					}
+ 					else
+ 					{
+-						$error = $e->getMessage();
++						$error[] = $e->getMessage();
+ 						return FALSE;
+ 					}
+ 				}
+@@ -73,14 +74,10 @@
+ 			}
+ 			catch (SoapFault $e)
+ 			{
+-				$error = $e->getMessage();
+-				if(!empty($config['debug']))
+-				{
+-					$debug = debug_backtrace();
+-					$file = $debug[0]['file'];
+-					$line = $debug[0]['line'];
+-					$error .= ' Method "'.$method.'" in "'.$file.'" (line: '.$line.')';
+-				}
++				$debug = debug_backtrace();
++				$file = $debug[0]['file'];
++				$line = $debug[0]['line'];
++				$error[] = $e->getMessage() . ' Method "'.$method.'" in "'.$file.'" (line: '.$line.')';
+ 
+ 				return FALSE;
+ 			}
+Index: libs/submit.php
+===================================================================
+--- libs/submit.php	(revision 17851)
++++ libs/submit.php	(working copy)
+@@ -340,6 +340,7 @@
+ 		}
+ 		else
+ 		{
++			$error = $error = $GLOBALS['text']['ERROR_MES'];
+ 			SignupHelper::Redirect(array('type'=>'error','content' => array("error_mes" => $error, "submitted_data" => $submitted_data)),'subscription',(empty($submitted_data["package"]) ? "" : "&package=".$submitted_data["package"]));
+ 		}
+ 	}
+@@ -379,7 +380,8 @@
+ 				SignupHelper::MakeSoapCall('end_session');
+ 				if($error)
+ 				{
+-					SignupHelper::Redirect(array('type'=>'error','content'=>$error),'wizard');
++					$error_string = implode("<br>", $error); 
++					SignupHelper::Redirect(array('type'=>'error','content'=>$error_string),'wizard');
+ 				}
+ 				else
+ 				{
+@@ -619,7 +621,8 @@
+ 			SignupHelper::WriteCompletePercentage(NULL,TRUE);
+ 			if ($error)
+ 			{
+-				SignupHelper::Redirect(array('type'=>'error','content'=>$error),'wizard');
++				$error_string = implode("<br>", $error);
++				SignupHelper::Redirect(array('type'=>'error','content'=>$error_string),'wizard');
+ 			}
+ 			else
+ 			{
+@@ -827,7 +830,7 @@
+                     if (in_array($value->name, array("rtpp_level", "voice_dialing"))) {
+                     $ArrayCustomerServiceFeatures[$value->name] = $value;
+                     }
+-                }
++		}
+ 
+ 		$CustomerServiceFeaturesRequest = array(
+ 					'i_customer' => $i_customer,
+@@ -1393,7 +1396,8 @@
+ 				$from = !empty($mail['error_notification_from']) ? $mail['error_notification_from'] : 'error@'.(!empty($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : $_SERVER['SERVER_NAME']);
+ 				$subject = $mail['error_notification_subj'];
+ 				$message = $mail['error_notification_message'];
+-				$message = str_replace('$e',$error,$message);
++				$error_string = implode("<br>", $error); 
++				$message = str_replace('$e',$error_string,$message);
+ 				SignupHelper::SendMail($to, $from, $subject, $message);
+ 			}
+ 		}
+@@ -1679,7 +1683,8 @@
+ 
+ 		if($error)
+ 		{
+-			$redirect_params = array('type'=>'error','content'=>array("error_mes" => $error));
++			$error_string = implode("<br>", $error); 
++			$redirect_params = array('type'=>'error','content'=>array("error_mes" => $error_string));
+ 		}
+ 		else
+ 		{
+@@ -1711,8 +1716,7 @@
+ 		return $string; // what you then see as $stripe_customers_info array item in php.log
+ 	}
+ 
+-	private static function _stripeSubmit()
+-	{
++	private static function _stripeSubmit() {
+ 		global $vars,$stripe_customers_info,$error;
+ 
+ 		$result = array();
+@@ -1818,7 +1822,8 @@
+ 
+ 		if($error)
+ 		{
+-			$redirect_params = array('type'=>'error','content'=>array("error_mes" => $error));
++			$error_string = implode("<br>", $error); 
++			$redirect_params = array('type'=>'error','content'=>array("error_mes" => $error_string));
+ 		}
+ 		else
+ 		{

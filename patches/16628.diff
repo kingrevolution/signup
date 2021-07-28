@@ -1,0 +1,28 @@
+Index: libs/submit.php
+===================================================================
+--- libs/ajax.php	(revision 16627)
++++ libs/ajax.php	(working copy)
+@@ -94,6 +94,10 @@
+ 						'pack'=> str_replace('DIDAPI::','',$number->package),
+ 						"monthly" => (empty($number->monthly) ? NULL : floatval($number->monthly))
+ 					);
++					if(!empty($number->city_id))
++					{
++						$output['numbers'][(string)$number->number]['city_id'] = $number->city_id;
++					}
+ 				}
+ 			}
+ 		}
+Index: templates/default/js/subscription.js
+===================================================================
+--- templates/default/js/subscription.js	(revision 16627)
++++ templates/default/js/subscription.js	(working copy)
+@@ -34,7 +34,7 @@
+ 			var list = numbers[key];
+ 			for (var i in list)
+ 			{
+-				options += '<option value="'+i+'" data-monthly="'+list[i].monthly+'" data-country="'+country+'" data-pack="'+list[i].pack+'"'+attributes+'>'+i+'</option>';
++				options += '<option value="'+i+'" data-monthly="'+list[i].monthly+'" data-country="'+country+'" data-pack="'+list[i].pack+'"'+attributes+(list[i].city_id ? ' data-city_id="'+list[i].city_id+'"' : '')+'>'+i+'</option>';
+ 			}
+ 		}
+ 		else if(state || state === '')

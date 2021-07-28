@@ -1,0 +1,22 @@
+Index: templates/default/html/result.php
+===================================================================
+--- templates/default/html/result.php   (revision 16917)
++++ templates/default/html/result.php   (working copy)
+@@ -105,7 +105,7 @@
+                                <td width="50%" align="right"><strong><?php echo $text['LINK']; ?></strong></td>
+                                <td align="left">
+                                        <a href="javascript:document.getElementById('account_url').submit();">Account Self-Care</a>
+-                                       <form id="account_url" method="POST" action="<?php echo $references['account_sci']; ?>" formtarget="_blank">
++                                       <form id="account_url" method="POST" action="<?php echo $references['account_sci']; ?>" target="_blank">
+                                                <input type="hidden" value="<?php echo $account_login; ?>" name="pb_auth_user">
+                                                <input type="hidden" value="<?php echo $account_password; ?>" name="pb_auth_password">
+                                        </form>
+@@ -131,7 +131,7 @@
+                                <td width="50%" align="right"><strong><?php echo $text['LINK']; ?></strong></td>
+                                <td align="left">
+                                        <a href="javascript:document.getElementById('customer_url').submit();">Customer Self-Care</a>
+-                                       <form id="customer_url" method="POST" action="<?php echo $references['customer_sci']; ?>" formtarget="_blank">
++                                       <form id="customer_url" method="POST" action="<?php echo $references['customer_sci']; ?>" target="_blank">
+                                                <input type="hidden" value="<?php echo $customer_login; ?>" name="pb_auth_user">
+                                                <input type="hidden" value="<?php echo htmlspecialchars_decode($customer_password); ?>" name="pb_auth_password">
+                                        </form>

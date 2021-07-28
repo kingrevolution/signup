@@ -1,0 +1,31 @@
+Index: templates/default/html/result.php
+===================================================================
+--- templates/default/html/result.php   (revision 16972)
++++ templates/default/html/result.php   (working copy)
+@@ -60,7 +60,7 @@
+                                <?php if ($subscriber['billing_model'] != '0' && $prefix_condition): ?>
+                                <tr>
+                                        <td width="50%" align="right"><strong><?php echo $text['SERVICE_PASSWORD']; ?></strong></td>
+-                                       <td align="left"><?php echo $voip_pass;?></td>
++                                       <td align="left"><?php echo htmlspecialchars($voip_pass);?></td>
+                                </tr>
+                                        <?php if(!empty($qrcode_data)):
+                                                $result_token = $_SESSION['result_token'] = substr(md5(mt_rand()*time()), 0, 10);
+@@ -99,7 +99,7 @@
+                        </tr>
+                        <tr>
+                                <td width="50%" align="right"><strong><?php echo $text['PASSWORD']; ?></strong></td>
+-                               <td align="left"><?php echo $account_password;?></td>
++                               <td align="left"><?php echo htmlspecialchars($account_password);?></td>
+                        </tr>
+                        <tr>
+                                <td width="50%" align="right"><strong><?php echo $text['LINK']; ?></strong></td>
+@@ -125,7 +125,7 @@
+                        </tr>
+                        <tr>
+                                <td width="50%" align="right"><strong><?php echo $text['PASSWORD']; ?></strong></td>
+-                               <td align="left"><?php echo htmlspecialchars_decode($customer_password);?></td>
++                               <td align="left"><?php echo htmlspecialchars($customer_password);?></td>
+                        </tr>
+                        <tr>
+                                <td width="50%" align="right"><strong><?php echo $text['LINK']; ?></strong></td>

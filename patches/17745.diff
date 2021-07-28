@@ -1,0 +1,636 @@
+Index: libs/model.php
+===================================================================
+--- libs/model.php	(revision 17742)
++++ libs/model.php	(working copy)
+@@ -40,6 +40,7 @@
+ 			$GLOBALS['paypal_attempts'] = $paypal;
+ 			$GLOBALS['signup_attempts'] = $log;
+ 			$GLOBALS['emails_to_confirm'] = $emails_to_confirm;
++			$GLOBALS['stripe_customers_info'] = $stripe_customers_info;
+ 		}
+ 
+ 		if (file_exists('auto_config.php'))
+@@ -103,7 +104,10 @@
+ 			{
+ 				if(empty($GLOBALS['emails_to_confirm'][$_REQUEST['subscription_token']]))
+ 				{
+-					SignupHelper::Redirect(array('type'=>'error','content'=>$GLOBALS['text']['INVALID_TOKEN']),$GLOBALS['layout']);
++					if (empty($GLOBALS['stripe_customers_info'][$_REQUEST['subscription_token']]))
++					{
++						SignupHelper::Redirect(array('type'=>'error','content'=>$GLOBALS['text']['INVALID_TOKEN']),$GLOBALS['layout']);
++					}
+ 				}
+ 			}
+ 		}
+Index: libs/submit.php
+===================================================================
+--- libs/submit.php	(revision 17742)
++++ libs/submit.php	(working copy)
+@@ -14,6 +14,12 @@
+ 			self::_paypalSubmit();
+ 			return;
+ 		}
++		else if (!empty($GLOBALS['stripe_customers_info']) && isset($GLOBALS['stripe_customers_info'][$_REQUEST['subscription_token']])) 
++		{
++			$_SESSION['subscription_token'] = $_REQUEST['subscription_token'];
++			self::_stripeSubmit();
++			return;
++		}
+ 		else if(!empty($GLOBALS['emails_to_confirm']) && isset($GLOBALS['emails_to_confirm'][$_REQUEST['subscription_token']]))
+ 		{
+ 			$email_to_confirm = $GLOBALS['emails_to_confirm'][$_REQUEST['subscription_token']];
+@@ -303,6 +309,10 @@
+ 			$result['customer_password'] = (!empty($GLOBALS['customer_info'])) ? $GLOBALS['customer_info']['password'] : '';
+ 			$result['customer_login'] = (!empty($GLOBALS['customer_info'])) ? $GLOBALS['customer_info']['login'] : '';
+ 			$result['customer_name'] = (!empty($GLOBALS['customer_info'])) ? $GLOBALS['customer_info']['name'] : '';
++			if (!empty($GLOBALS['stripe_3ds_url']) || !empty($GLOBALS['stripe_payment_intent'])) {
++				$result['stripe_3ds_url'] = (!empty($GLOBALS['stripe_3ds_url'])) ? $GLOBALS['stripe_3ds_url'] : '';
++				$result['stripe_payment_intent'] = (!empty($GLOBALS['stripe_payment_intent'])) ? $GLOBALS['stripe_payment_intent'] : '';
++			}
+ 			self::_WriteToLog($result);
+ 		}
+ 		if (($i_customer)&&(($subscriber['id_source'] == 'none_field') && ($set_package['virtoffice'] == 'true')))
+@@ -802,7 +812,7 @@
+ 
+ 		$GetAccountInfoResponse = array();
+ 		$GetAccountInfoResponse = SignupHelper::MakeSoapCall('get_account_info','Account',array('id'=>$set_package['template_account']['id']));
+-		if ($set_package['ccf_copy'])
++		if (!empty($set_package['ccf_copy']))
+ 		{
+ 			$GetTemplateCustomerCustomFieldsResponse = SignupHelper::MakeSoapCall('get_custom_fields_values','Customer',array('i_customer' => $GetAccountInfoResponse->account_info->i_customer));
+ 			if ($GetTemplateCustomerCustomFieldsResponse)
+@@ -1293,6 +1303,18 @@
+ 			$message = empty($mail['paypal_pending_message'][$lang]) ? (empty($mail['paypal_pending_message']["en"]) ? ( is_array($mail['paypal_pending_message']) ? reset($mail['paypal_pending_message']) : '' ) : $mail['paypal_pending_message']["en"]) : $mail['paypal_pending_message'][$lang];
+ 			SignupHelper::SendMail($to, $from, $subject, str_replace('$link',$result["return_page"],$message));
+ 		}
++		else if (!empty($result['stripe_3ds_url'])) 
++		{
++			$from = !empty($mail['cust_from']) ? $mail['cust_from'] : 'no-reply@'.(!empty($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : $_SERVER['SERVER_NAME']);
++			$to = $result['email'];
++
++			$subject = empty($mail['stripe_pending_subject'][$lang]) ? (empty($mail['stripe_pending_subject']["en"]) ? ( is_array($mail['stripe_pending_subject']) ? reset($mail['stripe_pending_subject']) : '' ) : $mail['stripe_pending_subject']["en"]) : $mail['stripe_pending_subject'][$lang];
++			$message = empty($mail['stripe_pending_message'][$lang]) ? (empty($mail['stripe_pending_message']["en"]) ? ( is_array($mail['stripe_pending_message']) ? reset($mail['stripe_pending_message']) : '' ) : $mail['stripe_pending_message']["en"]) : $mail['stripe_pending_message'][$lang];
++			$message = str_replace('$stripe_3ds_url',$result["stripe_3ds_url"],$message);
++			$url = SignupHelper::GetUrl() . '&subscription_token='.$_SESSION['subscription_token'] . '&act=capture_payment';
++			$message = str_replace('$link',$url,$message);
++			SignupHelper::SendMail($to, $from, $subject, $message);
++		}
+ 		else if ($result)
+ 		{
+ 			if (!(($set_package['subscriber']['id_source'] == 'none_field') && ($set_package['virtoffice'] == 'true'))){
+@@ -1309,6 +1331,8 @@
+ 			if (!empty($result['email']))
+ 			{
+ 				$mime_boundary = FALSE;
++				$filename = FALSE;
++				$clean_ob_data = FALSE;
+ 				$acc_login = $result['account_login'];
+ 				$acc_password = $result['account_password'];
+ 				$from = !empty($mail['cust_from']) ? $mail['cust_from'] : 'no-reply@'.(!empty($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : $_SERVER['SERVER_NAME']);
+@@ -1377,7 +1401,7 @@
+ 
+ 	private static function _WriteToLog(&$result)
+ 	{
+-		global $payment_method,$payment_method_select,$set_package,$paypal_payment;
++		global $payment_method,$payment_method_select,$set_package,$paypal_payment,$stripe_3ds_url;
+ 
+ 		$logsize = 300;//strings
+ 		$logtime = 365*24*3600;//days
+@@ -1392,9 +1416,14 @@
+ 			$email_to_confirm = $result['email_to_confirm'];
+ 			unset($result['email_to_confirm']);
+ 		}
+-
++		else if(!empty($result['stripe_customers_info']))
++		{
++			$stripe_customers_info_edited = $result['stripe_customers_info'];
++			unset($result['stripe_customers_info']);
++		}
+ 		$file='log.php';
+ 		$paypal = empty($GLOBALS['paypal_attempts']) ? array() : $GLOBALS['paypal_attempts'];
++		$stripe_customers_info = empty($GLOBALS['stripe_customers_info']) ? array() : $GLOBALS['stripe_customers_info'];
+ 		$log = empty($GLOBALS['signup_attempts']) ? array() : $GLOBALS['signup_attempts'];
+ 		$emails_to_confirm = empty($GLOBALS['emails_to_confirm']) ? array() : $GLOBALS['emails_to_confirm'];
+ 		$string = '';
+@@ -1419,6 +1448,26 @@
+ 			}
+ 		}
+ 
++		if(!empty($stripe_customers_info)) {
++			$stripe_customers_info = empty($stripe_customers_info_edited) ? $stripe_customers_info : $stripe_customers_info_edited;
++			foreach($stripe_customers_info as $key => $value)
++			{
++				if(time() - intval($value['timestamp']) > 60*60*24*7)
++				{
++					$type = empty($value['subscriber']['customer_login']) ? 'Account' : 'Customer';
++					$method = ($type == 'Account') ? 'terminate_account' : 'terminate_customer';
++					$DeleteCustomerRequest = ($type == 'Account') ? array('i_account'=>$value['i_account']) : array('i_customer'=>$value['i_customer']);
++					$DeleteCustomerResponse = SignupHelper::MakeSoapCall($method,$type,$DeleteCustomerRequest);
++					unset($stripe_customers_info[$key]);
++				}
++				else
++				{
++					$string .= SignupHelper::VarToString($value,'stripe_customers_info',$key);
++				}
++			}
++		}
++
++
+ 		if(!empty($emails_to_confirm))
+ 		{
+ 			foreach($emails_to_confirm as $key => $value)
+@@ -1450,6 +1499,9 @@
+ 		{
+ 			$string .= self::_ProcessPayPal($result);
+ 		}
++		else if(!empty($stripe_3ds_url)) {
++			$string .= self::_ProcessStripe($result);
++		}
+ 		else if(!empty($email_to_confirm))
+ 		{
+ 			$string .= SignupHelper::VarToString($email_to_confirm,'emails_to_confirm',$_SESSION['subscription_token']);
+@@ -1483,7 +1535,7 @@
+ 		}
+ 
+ 		$fh=fopen($file,"w");
+-		fwrite($fh,"<?php defined('SIGNUP') or die('Restricted access'); \n".'$log = array();'."\n".'$paypal = array();'."\n".'$emails_to_confirm = array();');
++		fwrite($fh,"<?php defined('SIGNUP') or die('Restricted access'); \n".'$log = array();'."\n".'$paypal = array();'."\n".'$emails_to_confirm = array();'."\n".'$stripe_customers_info = array();');
+ 		fwrite($fh,$string);
+ 		fclose($fh);
+ 	}
+@@ -1638,10 +1690,151 @@
+ 		SignupHelper::Redirect($redirect_params,$layout);
+ 	}
+ 
++	private static function _ProcessStripe(&$result)
++	{
++		global $account_info,$customer_info,$set_package,$did_api;
++
++		$token = $_SESSION['subscription_token'];
++		$stripe_log = array(
++			'i_account' => $account_info['i_account'],
++			'i_customer' => (!empty($customer_info['i_customer']) ? $customer_info['i_customer'] : ''),
++			'amount' => $set_package['amount'],
++			'timestamp' => time()
++		);
++		if($did_api)
++		{
++			$stripe_log['did_api'] = $did_api;
++		}
++		$stripe_log = array_merge($result,$stripe_log);
++		$string = SignupHelper::VarToString($stripe_log,'stripe_customers_info',$token);
++
++		return $string; // what you then see as $stripe_customers_info array item in php.log
++	}
++
++	private static function _stripeSubmit()
++	{
++		global $vars,$stripe_customers_info,$error;
++
++		$result = array();
++		$layout = 'subscription';
++		$submit_info = $stripe_customers_info[$_SESSION['subscription_token']];
++		$type = empty($submit_info['i_customer']) ? 'Account' : 'Customer';
++		$arr = explode('&',str_replace('?','&',$vars));
++		$url_vars = array();
++
++		foreach($arr as $value)
++		{
++			$matches = NULL;
++			preg_match('/(\w+)=(\w+)/',$value,$matches);
++			if($matches)
++			{
++				$url_vars[$matches[1]] = $matches[2];
++			}
++		}
++		$act = isset($url_vars['act']) ? $url_vars['act'] : NULL;
++
++		if(!$act)
++		{
++			$error = $GLOBALS['text']['MISSING_ARG'];
++		}
++		else
++		{
++			$stripe_xdr = FALSE;
++			if($act == 'capture_payment')
++			{
++				// capture the previously auth'ed payment
++				$MakeTransactionRequest = array(
++					'i_'.strtolower($type) => $submit_info['i_customer'],
++					'action' => 'Capture payment',
++					'amount' => $submit_info['amount'],
++					'visible_comment' => 'finish Stripe capture payment',
++					'internal_comment' => 'finish Stripe payment_intents with manual capture',
++					'suppress_notification' => 0,
++					'transaction_id' => $submit_info['stripe_payment_intent']
++				);
++				$MakeTransactionResponse = SignupHelper::MakeSoapCall('make_transaction', $type, $MakeTransactionRequest);
++				if ($MakeTransactionResponse && $submit_info['amount'] > 0) {
++					$GLOBALS[strtolower($type).'_transaction_id'] = $MakeTransactionResponse->transaction_id;
++				}
++
++				// check if Stripe finish capture CDR is in the db - it will be there only if status is COMPLETED
++				// auth and failed transactions are not in Customer_CDRs
++				$Request = array_merge((($type == 'Account') ? array('i_account'=>$submit_info['i_account']) : array('i_customer'=>$submit_info['i_customer'])),
++					array(
++						'i_service' => 2,
++						'from_date' => date('Y-m-d H:i:s',strtotime('-1 day')),
++						'to_date'=>date('Y-m-d H:i:s',strtotime('+10 seconds'))
++					)
++				);
++				$method = ($type == 'Account') ? 'get_xdr_list' : 'get_customer_xdrs';
++				$GetXDRList = SignupHelper::MakeSoapCall($method,$type,$Request);
++				if(!empty($GetXDRList->xdr_list))
++				{
++					$xdr_list = $GetXDRList->xdr_list;
++					foreach($xdr_list as $xdr)
++					{
++						if(strpos($xdr->CLD,'Stripe') !== FALSE && abs($xdr->charged_amount) >= floatval($submit_info['amount']))
++						{
++							if(!empty($submit_info['did_api']))
++							{
++								$GLOBALS['did_api'] = $submit_info['did_api'];
++								unset($submit_info['did_api']);
++								if(!empty($submit_info['i_customer']))
++								{
++									$GLOBALS['customer_info'] = array();
++									$GLOBALS['customer_info']['i_customer'] = $submit_info['i_customer'];
++								}
++								$number = self::_OrderDID($submit_info['i_account']);
++								if($number)
++								{
++									$submit_info['number'] = $number;
++								}
++							}
++							unset($submit_info['stripe_3ds_url']);
++							$result = $submit_info;
++							$redirect_params = array('type'=>'result','content'=>$result);
++							$layout = 'result';
++							self::_SendEmailNotifications($result);
++							$stripe_xdr = TRUE;
++							unset($stripe_customers_info[$_SESSION['subscription_token']]);
++							break;
++						}
++					}
++				}
++			}
++			// if there is stripe xdr - it means the payment failed or no action was taken by the card holder to complete authentication
++			if(!$stripe_xdr)
++			{
++				$method = ($type == 'Account') ? 'terminate_account' : 'terminate_customer';
++				$Request = ($type == 'Account') ? array('i_account'=>$submit_info['i_account']) : array('i_customer'=>$submit_info['i_customer']);
++				$DeleteCustomerResponse = SignupHelper::MakeSoapCall($method,$type,$Request);
++				if($DeleteCustomerResponse)
++				{
++					$redirect_params = array('type'=>'warning','content'=>$GLOBALS['text']['STRIPE_AUTH_FAILED']);
++					unset($stripe_customers_info[$_SESSION['subscription_token']]);
++				}
++			}
++		}
++
++		if($error)
++		{
++			$redirect_params = array('type'=>'error','content'=>array("error_mes" => $error));
++		}
++		else
++		{
++			$result['stripe_customers_info'] = $stripe_customers_info;
++			self::_WriteToLog($result);
++		}
++
++		SignupHelper::Redirect($redirect_params,$layout);
++	}
++
++
++
+ 	private static function _MakePayment($type,$id)
+ 	{
+ 		global $error,$set_package,$payment_method,$payment_method_select,$cc_name,$cc_address,$cc_zip,$cc_number,
+-		$cc_cvv,$cc_city,$iso_3166_1_a2,$iso_3166_a2,$cc_year,$cc_month;
++		$cc_cvv,$cc_city,$iso_3166_1_a2,$iso_3166_a2,$cc_year,$cc_month, $stripe_3ds_url, $stripe_payment_intent;
+ 
+ 		if (!empty($payment_method) && !empty($payment_method_select) && $payment_method[$payment_method_select] == 'PayPal'
+ 		|| count($payment_method) == 1 && implode('',$payment_method) == 'PayPal')
+@@ -1665,24 +1858,88 @@
+ 			'i_'.strtolower($type) => $id,
+ 			'payment_method_info' => $PaymentMethodInfo);
+ 
+-		$UpdatePaymentMethodResponse = SignupHelper::MakeSoapCall('update_payment_method',$type,$UpdatePaymentMethodRequest);
+-		if ($UpdatePaymentMethodResponse)
+-		{
+-			$MakeTransactionRequest = array(
+-				'i_'.strtolower($type) => $id,
+-				'action' => (empty($set_package['amount']) ? 'Authorization only' : 'E-Commerce Payment'),
+-				'amount' => (!empty($set_package['amount']) ? floatval($set_package['amount']) : 1),
+-				'visible_comment' => "refund",
+-				'internal_comment' => "refund",
+-				'suppress_notification' => 0,
+-				'card_info' => $PaymentMethodInfo,
+-				'transaction_id' => substr(md5(mt_rand()), 0, 12));
+-			$MakeTransactionResponse = SignupHelper::MakeSoapCall('make_transaction',$type,$MakeTransactionRequest);
+-			if ($MakeTransactionResponse && $set_package['amount'] > 0)
+-			{
+-				$GLOBALS[strtolower($type).'_transaction_id'] = $MakeTransactionResponse->transaction_id;
++			$GetPaymentMethodsForOwnerRequest = array(
++				'owner_type' => $type,
++				'i_owner' => $id
++			);
++
++			$GetPaymentMethodsForOwnerResponse = SignupHelper::MakeSoapCall('get_payment_methods_for_owner','Payment',$GetPaymentMethodsForOwnerRequest);
++
++			foreach ($GetPaymentMethodsForOwnerResponse->payment_methods as $index => $payment_method_obj) {
++			// i_online_payment_processor == '1012' is Stripe Payment Intents
++			// so if we found that this Stripe is used as the payment processor for the env
++				if ($payment_method_obj->i_online_payment_processor == '1012' && $payment_method_obj->payment_method == $PaymentMethodInfo['payment_method']) {
++					// we have Stripe Payment Intents create a payment_intent with capture_method: manual
++					// = we make auth only transaction which adds payment method for the customer
++					// and tells Stripe that this customer wants to pay some amount
++					// and we will capture this amount from the card at once
++					// the details are described in: https://stripe.com/docs/payments/capture-later
++					$MakeTransactionRequest = array (
++						'i_'.strtolower($type) => $id,
++						'action' => 'Authorization only',
++						'amount' => (!empty($set_package['amount']) ? floatval($set_package['amount']) : 1),
++						'visible_comment' => 'start Stripe capture payment',
++						'internal_comment' => 'invoke Stripe payment_intents with manual capture',
++						'suppress_notification' => 0,
++						'card_info' => $PaymentMethodInfo,
++						'transaction_id' => substr(md5(mt_rand()), 0, 12),
++						'save_card' => 'Y' // this is mandatory
++					);
++
++					$MakeTransactionResponse = SignupHelper::MakeSoapCall('make_transaction', $type, $MakeTransactionRequest);
++					if (empty($MakeTransactionResponse)) return FALSE;
++
++					// get the transaction details from PortaBilling to obtain a 3ds_url if it is there
++					$GetPaymentTransactionByIdRequest = array (
++						'i_payment_transaction' => $MakeTransactionResponse->i_payment_transaction
++					);
++					$GetPaymentTransactionByIdResponse = SignupHelper::MakeSoapCall('get_payment_transaction_by_id', 'Payment', $GetPaymentTransactionByIdRequest);
++					if (empty($GetPaymentTransactionByIdResponse)) return FALSE;
++
++					// details can look like: [details] => {"payment_method_id":"","payment_intent":""} or [details] => {"payment_method_id":"","payment_intent":"","3ds_url":""}
++					$details = json_decode($GetPaymentTransactionByIdResponse->{'transaction'}->{'details'});
++					if(!empty($details->{'3ds_url'})) {
++						 $stripe_3ds_url = $details->{'3ds_url'};
++						 $stripe_payment_intent = $details->{'payment_intent'};
++						return TRUE; // after this we should finish the customer creation etc and send them an email with instructions
++						// the screen should be similar to the one with the link confirmation
++					} else { // if no, we should process the Stripe transaction as usual: try to make a payment by finishing the capture
++						$MakeTransactionRequest = array (
++							'i_'.strtolower($type) => $id,
++							'action' => 'Capture payment',
++							'amount' => $GetPaymentTransactionByIdResponse->{'transaction'}->{'amount'},
++							'visible_comment' => 'finish Stripe capture payment',
++							'internal_comment' => 'finish Stripe payment_intents with manual capture',
++							'suppress_notification' => 0,
++							'transaction_id' => $details->{'payment_intent'}
++						);
++						$MakeTransactionResponse = SignupHelper::MakeSoapCall('make_transaction', $type, $MakeTransactionRequest);
++						if ($MakeTransactionResponse && $set_package['amount'] > 0) {
++							$GLOBALS[strtolower($type).'_transaction_id'] = $MakeTransactionResponse->transaction_id;
++						}
++						return TRUE;
++					}
++					break;
++				}
++			} 
++
++			$UpdatePaymentMethodResponse = SignupHelper::MakeSoapCall('update_payment_method',$type,$UpdatePaymentMethodRequest);
++			if ($UpdatePaymentMethodResponse) {
++				$MakeTransactionRequest = array (
++					'i_'.strtolower($type) => $id,
++					'action' => (empty($set_package['amount']) ? 'Authorization only' : 'E-Commerce Payment'),
++					'amount' => (!empty($set_package['amount']) ? floatval($set_package['amount']) : 1),
++					'visible_comment' => "refund",
++					'internal_comment' => "refund",
++					'suppress_notification' => 0,
++					'card_info' => $PaymentMethodInfo,
++					'transaction_id' => substr(md5(mt_rand()), 0, 12)
++					);
++				$MakeTransactionResponse = SignupHelper::MakeSoapCall('make_transaction', $type, $MakeTransactionRequest);
++				if ($MakeTransactionResponse && $set_package['amount'] > 0) {
++					$GLOBALS[strtolower($type).'_transaction_id'] = $MakeTransactionResponse->transaction_id;
++				}
+ 			}
+-		}
+ 		if($error)
+ 		{
+ 			$DeleteCustomerResponse = SignupHelper::MakeSoapCall((($type == 'Customer')?'terminate_customer':'terminate_account'),$type,array('i_'.strtolower($type) => $id));
+Index: locale/en/en_result.ini
+===================================================================
+--- locale/en/en_result.ini	(revision 17742)
++++ locale/en/en_result.ini	(working copy)
+@@ -10,6 +10,7 @@
+ SUCCESS="You have successfully created an account in our system."
+ ADDITIONAL_INFO="Additional Info"
+ PAYPAL_WARNING="Your account needs to be activated, otherwise it will be automatically terminated.</br>Please don't reload the page and proceed with the payment via PayPal payment form.</br> It's important to return to the merchant's page after a successful payment."
++STRIPE_COMPLETE_3DS_AUTHENTICATON="Your account needs to be activated, otherwise it will be automatically terminated.</br>Please proceed with the instructions sent to your email address."
+ CONFIRM_TITLE="You are almost done."
+ PAYPAL_PAY="Pay via PayPal"
+ EMAIL_CONFIRM_WARNING="To finish signing up, please proceed with the instructions sent to your email address."
+Index: locale/en/en_subscription.ini
+===================================================================
+--- locale/en/en_subscription.ini	(revision 17742)
++++ locale/en/en_subscription.ini	(working copy)
+@@ -55,4 +55,5 @@
+ ERROR_MES="Signup attempt has failed, please contact the service provider."
+ PAYPAL_CANCEL="Your account has been terminated due to failed payment."
+ PAYPAL_POSTPONE="PayPal payment is still in a pending status, please, re-open the link sent to your email and in one hour check the state."
++STRIPE_AUTH_FAILED="Your account has been terminated due to failed payment."
+ WRONG_EMAIL_DOMAIN="Please enter correct/available email domain."
+Index: locale/en/en_wizard.ini
+===================================================================
+--- locale/en/en_wizard.ini	(revision 17742)
++++ locale/en/en_wizard.ini	(working copy)
+@@ -167,6 +167,7 @@
+ PROMO_CODES_FUNC_DESC="The currently available options are:</br>1) If a customer would like to offer only additional funds: define only the customer name with available vouchers (vouchers balance - amount on which a payment will be made)</br>2) If a customer would like to provide discounts on some destinations: create a <b>blocked</b> voucher (its ID will be used as a promo code) with zero balance and set i_vd_plan (note that the currency of the new account should match the currency of the discount otherwise the discount will not be assigned) and enable the 'Coupons' checkbox</br>3) Both options are enabled (funds + discount): define a customer name which owns the promo vouchers, i_vd_plan and mark the checkbox.</br>You can specify the following options:</br>Discount - i_vd_plan (you can find it if you hover the cursor over the needed discount plan);</br>Promo - it is the code which the customer should enter (it is equal to the customer's name with the available voucher);</br>Coupons - checkbox (it is used to differentiate a provided functionality).</br>After a successful money transfer, the voucher will be terminated. the Customer can control the availability of the vouchers with their 'Life Period'. In case of a voucher is expired it will be skipped and the next in the list will be taken."
+ RESULT_DESC="Additional information which will be displayed on the result page. <br />* Soft-phone link - the link to the softphone installer. <br />* Additional Notes - Information that will be displayed at the bottom of the result page."
+ PAYPAL_PENDING_TEXT="Message sent in case of a PayPal payment pending status"
++STRIPE_PENDING_TEXT="Message sent in case Stripe requires 3D Secure"
+ SMTP="Use SMTP"
+ SMTP_DESC="Use SMTP protocol to send outgoing emails"
+ SMTP_DISABLED="Please make sure the Pear package is installed and configured"
+Index: locale/es/es_result.ini
+===================================================================
+--- locale/es/es_result.ini	(revision 17742)
++++ locale/es/es_result.ini	(working copy)
+@@ -9,4 +9,5 @@
+ PAYPAL_WARNING="Su cuenta necesita activarse o de lo contrario será suspendida automáticamente.  </br>Por favor no recargue la pagina y proceda con la forma para pagos de PayPal .</br>Atención:  Es importante regresar a esta pagina después de la notificación de pago exitoso."
+ CONFIRM_TITLE="Esta por terminar"
+ PAYPAL_PAY="Pagar vía PayPal"
+-EMAIL_CONFIRM_WARNING="Para finalizar el proceso de registro por favor continúe con las instrucciones enviadas a su cuenta de correo electrónico.  Es posible que necesite buscar este correo en su bandeja de correo basura( spam )."
+\ No newline at end of file
++EMAIL_CONFIRM_WARNING="Para finalizar el proceso de registro por favor continúe con las instrucciones enviadas a su cuenta de correo electrónico.  Es posible que necesite buscar este correo en su bandeja de correo basura( spam )."
++STRIPE_COMPLETE_3DS_AUTHENTICATON="Su cuenta debe ser activada; de lo contrario, se cancelará automáticamente. </br> Continúe con las instrucciones enviadas a su dirección de correo electrónico."
+Index: locale/es/es_subscription.ini
+===================================================================
+--- locale/es/es_subscription.ini	(revision 17742)
++++ locale/es/es_subscription.ini	(working copy)
+@@ -57,3 +57,4 @@
+ TERMS_CB1="Me apego a los Términos de Servicio y la Poli­tica de Uso Aceptable"
+ ERROR_MES="El intento de registro ha fallado.  Por favor pongase en contacto con nosotros."
+ WRONG_EMAIL_DOMAIN="Por favor, introduzca dominio de correo electrónico correcta/disponible."
++STRIPE_AUTH_FAILED="Su cuenta ha sido cancelada debido a un pago fallido."
+Index: locale/es/es_wizard.ini
+===================================================================
+--- locale/es/es_wizard.ini	(revision 17742)
++++ locale/es/es_wizard.ini	(working copy)
+@@ -152,7 +152,7 @@
+ REFERRAL_LINKS_FUNC="Funcion para los enlaces de referencia"
+ REFERRAL_LINKS_FUNC_DESC="Esta opcion abilitara el servicio de enlaces de referencia para sus clientes. </br>ustede debera definir las llaves de referencialas cuales se enviaran a sus clientes en el campo 'Referral Link Keys' .</br> Porfavor de notar que las llaves de referencia deberan ser separadas al utilizar comas (ej. Luis, Hugo , etc.).</br>La solicitud a la pagina de 'index.php' debera ser enviado con el atributo 'ref' y definidos con la clave, por ejemplo,: http:/<my_site.com>/soap/index.php?ref=tom </br>Este servicio requiere un campo especial personalizado en el nivel de cuenta ( Referral link). Puede ser agregado en la pagina 'Web Interface' :</br>* el campo de 'Object' debera ser 'Account';</br>* el campo  'Name' debera ser el 'Referral link'."
+ PROMO_CODES_FUNC="Funcion de Codigos de Promocion"
+-PROMO_CODES_FUNC_DESC="Las siguientes son las opciones a seleccionar al momento:</br>1) Si el cliente solamente quisiera ofrecer fondos adicionales: se define solo el nombre del cliente con vales(voucher) disponibles (vale de balance - la cantidad en la cual el pago se efectura)</br>2) Si el cliente quisiera proveer descuentos para algunos destinos: Se define el nombre del cliente (o cualquier cosa que se debe utilizar como un codigo) y establecer i_vd_plan (tenga en cuenta que la moneda de la nueva cuenta debe coincidir con la moneda del descuento de lo contrario no se le asignara el descuento)</br>3) Ambas opciones activadas (fondos + descuento): definir el cliente que es propietario de los vales de promocion, i_vd_plan y marque la casilla de verificacion.</br> Podra especificar las siguientes opciones:</br>Descuento - i_vd_plan (usted lo puede encontrar si se pasa el cursor sobre el plan de descuento requerido);</br>Promo - es el codigo que el cliente debe ingresar (esto es el nombre del cliente con el vale disponible);</br>Cupones - casilla de verificacion (es utilizada para diferenciar la funcionalidad porporcionada).</br>Despues de la transferencia exitosa de dinero , se dara por terminado el vale. El clientre podra controlar la disponibilid del vale con su "Periodo de Vida '. En caso de que algun vale este expirado este sera omitido y el siguiente sera tomado."
++PROMO_CODES_FUNC_DESC="Las siguientes son las opciones a seleccionar al momento:</br>1) Si el cliente solamente quisiera ofrecer fondos adicionales: se define solo el nombre del cliente con vales(voucher) disponibles (vale de balance - la cantidad en la cual el pago se efectura)</br>2) Si el cliente quisiera proveer descuentos para algunos destinos: Se define el nombre del cliente (o cualquier cosa que se debe utilizar como un codigo) y establecer i_vd_plan (tenga en cuenta que la moneda de la nueva cuenta debe coincidir con la moneda del descuento de lo contrario no se le asignara el descuento)</br>3) Ambas opciones activadas (fondos + descuento): definir el cliente que es propietario de los vales de promocion, i_vd_plan y marque la casilla de verificacion.</br> Podra especificar las siguientes opciones:</br>Descuento - i_vd_plan (usted lo puede encontrar si se pasa el cursor sobre el plan de descuento requerido);</br>Promo - es el codigo que el cliente debe ingresar (esto es el nombre del cliente con el vale disponible);</br>Cupones - casilla de verificacion (es utilizada para diferenciar la funcionalidad porporcionada).</br>Despues de la transferencia exitosa de dinero, se dara por terminado el vale. El clientre podra controlar la disponibilid del vale con su 'Periodo de Vida '. En caso de que algun vale este expirado este sera omitido y el siguiente sera tomado."
+ RESULT_DESC="Informacion adicional que se mostrara en la pagina de resultados. <br />* Enlace para el Softphone - el vinculo con el instalador para el softphone. <br />* Notas adicionales - la informacion se mostrara en la parte inferior de la pagina de resultados."
+ ACCOUNT_ID_SOURCE="Fuente del ID para la cuenta"
+ DID_INV="Inventario de DIDs"
+@@ -234,5 +234,6 @@
+ REFERRAL_LINKS_FUNC="Funcion para los enlaces de referencia"
+ REFERRAL_LINKS_FUNC_DESC="Esta opcion abilitara el servicio de enlaces de referencia para sus clientes. </br>ustede debera definir las llaves de referencialas cuales se enviaran a sus clientes en el campo 'Referral Link Keys' .</br> Porfavor de notar que las llaves de referencia deberan ser separadas al utilizar comas (ej. Luis, Hugo , etc.).</br>La solicitud a la pagina de 'index.php' debera ser enviado con el atributo 'ref' y definidos con la clave, por ejemplo,: http:/<my_site.com>/soap/index.php?ref=tom </br>Este servicio requiere un campo especial personalizado en el nivel de cuenta ( Referral link). Puede ser agregado en la pagina 'Web Interface' :</br>* el campo de 'Object' debera ser 'Account';</br>* el campo  'Name' debera ser el 'Referral link'."
+ PROMO_CODES_FUNC="Funcion de Codigos de Promocion"
+-PROMO_CODES_FUNC_DESC="Las siguientes son las opciones a seleccionar al momento:</br>1) Si el cliente solamente quisiera ofrecer fondos adicionales: se define solo el nombre del cliente con vales(voucher) disponibles (vale de balance - la cantidad en la cual el pago se efectura)</br>2) Si el cliente quisiera proveer descuentos para algunos destinos: Se define el nombre del cliente (o cualquier cosa que se debe utilizar como un codigo) y establecer i_vd_plan (tenga en cuenta que la moneda de la nueva cuenta debe coincidir con la moneda del descuento de lo contrario no se le asignara el descuento)</br>3) Ambas opciones activadas (fondos + descuento): definir el cliente que es propietario de los vales de promocion, i_vd_plan y marque la casilla de verificacion.</br> Podra especificar las siguientes opciones:</br>Descuento - i_vd_plan (usted lo puede encontrar si se pasa el cursor sobre el plan de descuento requerido);</br>Promo - es el codigo que el cliente debe ingresar (esto es el nombre del cliente con el vale disponible);</br>Cupones - casilla de verificacion (es utilizada para diferenciar la funcionalidad porporcionada).</br>Despues de la transferencia exitosa de dinero , se dara por terminado el vale. El clientre podra controlar la disponibilid del vale con su "Periodo de Vida '. En caso de que algun vale este expirado este sera omitido y el siguiente sera tomado."
+-RESULT_DESC="Informacion adicional que se mostrara en la pagina de resultados. <br />* Enlace para el Softphone - el vinculo con el instalador para el softphone. <br />* Notas adicionales - la informacion se mostrara en la parte inferior de la pagina de resultados.
++PROMO_CODES_FUNC_DESC="Las siguientes son las opciones a seleccionar al momento:</br>1) Si el cliente solamente quisiera ofrecer fondos adicionales: se define solo el nombre del cliente con vales(voucher) disponibles (vale de balance - la cantidad en la cual el pago se efectura)</br>2) Si el cliente quisiera proveer descuentos para algunos destinos: Se define el nombre del cliente (o cualquier cosa que se debe utilizar como un codigo) y establecer i_vd_plan (tenga en cuenta que la moneda de la nueva cuenta debe coincidir con la moneda del descuento de lo contrario no se le asignara el descuento)</br>3) Ambas opciones activadas (fondos + descuento): definir el cliente que es propietario de los vales de promocion, i_vd_plan y marque la casilla de verificacion.</br> Podra especificar las siguientes opciones:</br>Descuento - i_vd_plan (usted lo puede encontrar si se pasa el cursor sobre el plan de descuento requerido);</br>Promo - es el codigo que el cliente debe ingresar (esto es el nombre del cliente con el vale disponible);</br>Cupones - casilla de verificacion (es utilizada para diferenciar la funcionalidad porporcionada).</br>Despues de la transferencia exitosa de dinero , se dara por terminado el vale. El clientre podra controlar la disponibilid del vale con su 'Periodo de Vida '. En caso de que algun vale este expirado este sera omitido y el siguiente sera tomado."
++RESULT_DESC="Informacion adicional que se mostrara en la pagina de resultados. <br />* Enlace para el Softphone - el vinculo con el instalador para el softphone. <br />* Notas adicionales - la informacion se mostrara en la parte inferior de la pagina de resultados."
++STRIPE_PENDING_TEXT="Mensaje enviado en caso de que Stripe requiera 3D Secure"
+Index: locale/fr/fr_result.ini
+===================================================================
+--- locale/fr/fr_result.ini	(revision 17742)
++++ locale/fr/fr_result.ini	(working copy)
+@@ -12,4 +12,5 @@
+ PAYPAL_WARNING="Votre compte doit être activé, sinon il sera automatiquement résilié. </ Br> S'il vous plaît  recharger la page en envoyant le paiement via le formulaire de paiement PayPal. </ Br> Il est important de revenir à la page du marchand après le succès du paiement."
+ CONFIRM_TITLE="Vous avez presque fini"
+ PAYPAL_PAY="Payer avec PayPal"
+-EMAIL_CONFIRM_WARNING="Suivez les instruction que vous ont été envoyé par mail pour finir votre inscription"
+\ No newline at end of file
++EMAIL_CONFIRM_WARNING="Suivez les instruction que vous ont été envoyé par mail pour finir votre inscription"
++STRIPE_COMPLETE_3DS_AUTHENTICATON="Votre compte doit être activé, sinon il sera automatiquement résilié. </br> Veuillez suivre les instructions envoyées à votre adresse e-mail."
+Index: locale/fr/fr_subscription.ini
+===================================================================
+--- locale/fr/fr_subscription.ini	(revision 17742)
++++ locale/fr/fr_subscription.ini	(working copy)
+@@ -56,3 +56,4 @@
+ PAYPAL_CANCEL=" Votre compte à été fermé faute de paiement."
+ PAYPAL_POSTPONE="Paiement PayPal encore en suspend , veillez, rouvrir le lien qui vous à été envoyé par mail d'ici une heure pour vérifier son statut."
+ WRONG_EMAIL_DOMAIN="S'il vous plaît entrez domain e-mail correcte / disponibles."
++STRIPE_AUTH_FAILED="Votre compte a été résilié en raison d'un échec de paiement."
+Index: locale/fr/fr_wizard.ini
+===================================================================
+--- locale/fr/fr_wizard.ini	(revision 17742)
++++ locale/fr/fr_wizard.ini	(working copy)
+@@ -162,3 +162,4 @@
+ PROMO_CODES_FUNC_DESC="Options actuellement disponibles sont: </ br> 1) Si le client souhaite offrir des fonds ne supplémentaires: définir uniquement le nom du client avec l'équilibre Chèques disponibles (Chèques - montant sur lequel le paiement sera effectué) </ br> 2) Si le client souhaite offrir des rabais sur certaines destinations: définir le nom du client (ou quelque chose qui devrait être utilisé comme code) et mi_vd_plan (à noter que la monnaie du nouveau compte doit correspondre à la monnaie de l'escompte dans le cas contraire le rabais ne sera pas appliquer) </ br> 3) Les deux options activées (fonds + rabais): définissent un nom de client qui détient des bons de réductions, i_vd_plan et cochez la case </ br> Vous pouvez spécifier les options suivantes:. </ br> Rabais - i_vd_plan (vous pouvez le trouver si vous survolez le curseur sur le plan de réduction nécessaire); </ br> Promo - c'est le code que le client doit entrer (il est égal au nom du client avec des bons disponibles); </ br> Coupons - case (il est utilisé pour différencier les services fourni) . </ br> Après le transfert de l'argent avec succès, le bon sera résilié. Le client peut contrôler la disponibilité des coupons avec leur «période de la vie». En cas un bon de réduction est expiré, il sera ignoré et la suivante dans la liste sera prise."
+ RESULT_DESC="Les renseignements complémentaires seront affichés sur la page de résultat. <br /> * lien Soft-phone - le lien vers le programme d'installation du logiciel de téléphonie. <br /> * Notes supplémentaires - les informations qui seront affichées au bas de la page de résultats."
+ PAYPAL_PENDING_TEXT="Texte d'un message envoyé en cas de paiement PayPal statut en attente"
++STRIPE_PENDING_TEXT="Message envoyé au cas où Stripe nécessite 3D Secure"
+Index: locale/ru/ru_result.ini
+===================================================================
+--- locale/ru/ru_result.ini	(revision 17742)
++++ locale/ru/ru_result.ini	(working copy)
+@@ -17,4 +17,5 @@
+ CONGRATULATIONS="Поздравляем"
+ SUCCESS="Вы успешно зарегистрировались в системе."
+ ADDITIONAL_INFO="Дополнительная информация"
+-BACK="Назад"
+\ No newline at end of file
++BACK="Назад"
++STRIPE_COMPLETE_3DS_AUTHENTICATON="Ваша учетная запись должна быть активирована, в противном случае она будет автоматически удалена. </br> Пожалуйста, следуйте инструкциям, отправленным на ваш адрес электронной почты."
+\ No newline at end of file
+Index: locale/ru/ru_subscription.ini
+===================================================================
+--- locale/ru/ru_subscription.ini	(revision 17742)
++++ locale/ru/ru_subscription.ini	(working copy)
+@@ -61,4 +61,5 @@
+ TERMS_CB2="Я согласен с условиями использования экстренных номеров"
+ NOTE="Примечание"
+ ERROR="Signup attempt has failed, please contact the service provider."
+-WRONG_EMAIL_DOMAIN="Пожалуйста, введите коректный/доступный имэил домен."
+\ No newline at end of file
++WRONG_EMAIL_DOMAIN="Пожалуйста, введите коректный/доступный имэил домен."
++STRIPE_AUTH_FAILED="Ваша учетная запись была удалена из-за неудавшейся оплаты."
+Index: locale/ru/ru_wizard.ini
+===================================================================
+--- locale/ru/ru_wizard.ini	(revision 17742)
++++ locale/ru/ru_wizard.ini	(working copy)
+@@ -1,2 +1,3 @@
+ WIZARD="Настройка формы"
+-WAIT="Пожалуйста подождите..."
+\ No newline at end of file
++WAIT="Пожалуйста подождите..."
++STRIPE_PENDING_TEXT="Сообщение клиенту, если Stripe требует 3D Secure"
+\ No newline at end of file
+Index: mail.php
+===================================================================
+--- mail.php	(revision 17742)
++++ mail.php	(working copy)
+@@ -23,6 +23,14 @@
+   array (
+     'en' => 'Please, follow the link $link once PayPal transaction is complete (sometimes it takes a while to complete the transaction).',
+   ),
++  'stripe_pending_subject' => 
++  array (
++    'en' => 'Complete Authentication',
++  ),
++  'stripe_pending_message' => 
++  array (
++    'en' => 'Please go to the authentication page $stripe_3ds_url to complete the payment. Once done, please follow the link $link to finish signing up.',
++  ),
+   'email_confirm_subject' => 
+   array (
+     'en' => 'Signup confirmation',
+Index: templates/default/html/result.php
+===================================================================
+--- templates/default/html/result.php	(revision 17742)
++++ templates/default/html/result.php	(working copy)
+@@ -35,6 +35,11 @@
+ 		<h1 id="confirm_title"><?php echo $text['CONFIRM_TITLE'];?></h1>
+ 		<p><?php echo $text['EMAIL_CONFIRM_WARNING'];?></p>
+ 	</div>
++<?php elseif(!empty($stripe_3ds_url)):?> 
++	<div class="jumbotron">
++		<h1 id="confirm_title"><?php echo $text['CONFIRM_TITLE'];?></h1>
++		<p><?php echo $text['STRIPE_COMPLETE_3DS_AUTHENTICATON'];?></p>
++	</div>
+ <?php else:
+ 	$prefix_condition = (empty($subscriber['prefix']) || !in_array($subscriber['prefix'],array('a','cc','cb')));
+ ?>
+Index: templates/default/html/wizard.php
+===================================================================
+--- templates/default/html/wizard.php	(revision 17742)
++++ templates/default/html/wizard.php	(working copy)
+@@ -751,6 +751,34 @@
+ 				</div>
+ 			</div>
+ 
++			<h4><?php echo $text['STRIPE_PENDING_TEXT'];?></h4>
++			<div class="form-group">
++				<label class="col-lg-4 control-label" for="mail-stripe_pending_message"><?php echo $text['SUBJECT']; ?></label>
++				<div class="col-lg-8">
++					<input type="text" id="mail-stripe_pending_message" class="form-control mand" name="mail[stripe_pending_subject][<?php echo $lang; ?>]" value="<?php echo !empty($mail['stripe_pending_subject'][$lang]) ? $mail['stripe_pending_subject'][$lang] : "Complete Authentication";?>" />
++					<?php if(!empty($mail['stripe_pending_subject'])): ?>
++					<?php foreach($mail['stripe_pending_subject'] as $_lang => $_confirm_subj): ?>
++					<?php if($_lang != $lang): ?>
++					<input type="hidden" name="mail[stripe_pending_subject][<?php echo $_lang; ?>]" value="<?php echo $_confirm_subj; ?>" />
++					<?php endif; ?>
++					<?php endforeach; ?>
++					<?php endif; ?>
++				</div>
++			</div>
++			<div class="form-group">
++				<label class="col-lg-4 control-label" for="mail-stripe_pending_message"><?php echo $text['MESSAGE']; ?></label>
++				<div class="col-lg-8">
++					<textarea id="mail-stripe_pending_message" class="form-control mand editor" name="mail[stripe_pending_message][<?php echo $lang; ?>]" rows="2"><?php echo !empty($mail['stripe_pending_message'][$lang]) ? $mail['stripe_pending_message'][$lang] : 'Please go to the authentication page $stripe_3ds_url to complete the payment. Once done, please follow the link $link to finish signing up.';?></textarea>
++					<?php if(!empty($mail['stripe_pending_message'])): ?>
++					<?php foreach($mail['stripe_pending_message'] as $_lang => $_confirm_mes): ?>
++					<?php if($_lang != $lang): ?>
++					<input type="hidden" name="mail[stripe_pending_message][<?php echo $_lang; ?>]" value="<?php echo $_confirm_mes; ?>" />
++					<?php endif; ?>
++					<?php endforeach; ?>
++					<?php endif; ?>
++				</div>
++			</div>
++
+ 			<h4><?php echo $text['EMAIL_CONFIRM_TEXT'];?></h4>
+ 			<div class="form-group">
+ 				<label class="col-lg-4 control-label" for="mail-confirm_notification_subject"><?php echo $text['SUBJECT']; ?></label>

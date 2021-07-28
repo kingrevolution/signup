@@ -1,0 +1,23 @@
+Index: libs/submit.php
+===================================================================
+--- libs/submit.php     (revision 16799)
++++ libs/submit.php     (working copy)
+@@ -865,8 +865,17 @@
+                        global $customer_info;
+ 
+                        $lang_list = SignupHelper::GetInterfaceLangs();
++                       if (strlen($customer_info["email"]) < 31) {
++                $customer_name = 'Customer-'.$customer_info["email"];
++                       }
++                       elseif (strlen($customer_info["email"]) > 31 && strlen($customer_info["email"]) < 41 ) {
++                $customer_name = $customer_info["email"];
++                       }
++                       else{
++                $customer_name = 'Customer-'.time();
++                       }
+                        $CustomerInfo = array (
+-                                       'name' => 'Customer-'.$customer_info["email"],
++                                       'name' => $customer_name,
+                                        'i_customer' => $i_customer,
+                                        'i_lang' => (isset($lang_list[$GLOBALS['lang']]) ? $GLOBALS['lang'] : $i_lang),
+                        );

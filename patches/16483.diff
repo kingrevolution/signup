@@ -1,0 +1,267 @@
+Index: libs/ajax.php
+===================================================================
+--- libs/ajax.php	(revision 16482)
++++ libs/ajax.php	(working copy)
+@@ -441,7 +441,38 @@
+ 		}
+ 	}
+ 
++	/**
++	 * The method that returns the list of representatives
++	 */
++	public static function AjaxGetRepresentatives()
++	{
++		$text = $GLOBALS['text'];
++		$service = $GLOBALS['config']['service'];
++		$GetRepresentativeListRequest = array('offset' => 0,'limit' => NULL);
++		$GetRepresentativeListResponse = SignupHelper::MakeSoapCall('get_representative_list','none',$GetRepresentativeListRequest,'Representative');
++		SignupHelper::MakeSoapCall('end_session');
++		if ($GetRepresentativeListResponse && isset($GetRepresentativeListResponse->representative_list) && count($GetRepresentativeListResponse->representative_list) > 0)
++		{
++			foreach ($GetRepresentativeListResponse->representative_list as $representative)
++			{
+ 
++				if ($service == 'Admin' && !empty($representative->i_customer))
++				{
++					continue;
++				}
++				$representatives[$representative->iso_4217][$representative->i_rep] = SignupHelper::PrepareString($representative->name);
++
++			}
++			SignupHelper::SortProdAndSubsc($representatives);
++			foreach (array_keys($representatives) as $iso_4217) {
++				$representatives[$iso_4217] = ['1' => $text['DEFAULT']] + $representatives[$iso_4217];
++			}
++			$representatives = $_SESSION['representatives'] = json_encode($representatives);
++			return $representatives;
++		}
++		return '0';
++	}
++
+ 	/**
+ 	 * result
+ 	 */
+Index: libs/submit.php
+===================================================================  
+--- libs/submit.php	(revision 16482)
++++ libs/submit.php	(working copy)
+@@ -314,7 +314,7 @@
+ 			$result['customer_name'] = (!empty($GLOBALS['customer_info'])) ? $GLOBALS['customer_info']['name'] : '';
+ 			$result['references'] = $config['references'];
+ 			}
+-		
++
+ 		self::_SendEmailNotifications($result);
+ 		SignupHelper::WriteCompletePercentage('100%');
+ 
+@@ -541,6 +541,15 @@
+ 								}
+ 								$packages[$key]['subscriber']['i_billing_period'] = $GetCustomerResponse->customer_info->i_billing_period;
+ 								$packages[$key]['subscriber']['i_time_zone_c'] = $GetCustomerResponse->customer_info->i_time_zone;
++								// Handle Representative for customer
++								if (empty($packages[$key]['subscriber']['i_rep']))
++								{
++									$packages[$key]['subscriber']['i_rep'] = NULL;
++								}
++								elseif ($packages[$key]['subscriber']['i_rep'] == '1')
++								{
++									$packages[$key]['subscriber']['i_rep'] = !empty($GetCustomerResponse->customer_info->i_rep) ? $GetCustomerResponse->customer_info->i_rep : NULL;
++								}
+ 							}
+ 						}
+ 					}
+@@ -768,6 +777,10 @@
+ 		{
+ 			$customer_info['perm_credit_limit'] = $subscriber['credit_limit_c'];
+ 		}
++		if(isset($subscriber['i_rep']))
++		{
++			$customer_info['i_rep'] = $subscriber['i_rep'];
++		}
+ 		if ($config['service'] == 'Admin')
+ 		{
+ 			$customer_info['i_customer_class'] = $subscriber['customer_class'];
+@@ -1261,7 +1274,7 @@
+ 			if (!(($set_package['subscriber']['id_source'] == 'none_field') && ($set_package['virtoffice'] == 'true'))){
+ 				$number = $result['number'];
+ 				$pin = $result['pin'];
+-				$acc_login = $result['account_login']; 
++				$acc_login = $result['account_login'];
+ 				$acc_password = $result['account_password'];
+ 			}
+ 			$cust_login = $result['customer_login'];
+Index: locale/en/en_wizard.ini
+=================================================================== 
+--- locale/en/en_wizard.ini	(revision 16482)
++++ locale/en/en_wizard.ini	(working copy)
+@@ -119,6 +119,9 @@
+ PRODUCT="Product"
+ SUBSCRIPTION_DESC="The name of the subscription used in this package."
+ SUBSCRIPTION="Subscription"
++REPRESENTATIVE_DESC="The name of the representative used in this package."
++REPRESENTATIVE="Representative"
++DEFAULT="Default"
+ COUPONS_DESC="The option is used to turn on cupons for package."
+ COUPONS="Coupons"
+ SOFTPHONE_LINK="Soft-phone link"
+Index: locale/es/es_wizard.ini
+=================================================================== 
+--- locale/es/es_wizard.ini	(revision 16482)
++++ locale/es/es_wizard.ini	(working copy)
+@@ -108,6 +108,9 @@
+ PRODUCT="Producto"
+ SUBSCRIPTION_DESC="El nombre de la suscripción utilizada en este paquete."
+ SUBSCRIPTION="Subscripcion"
++REPRESENTATIVE_DESC="El nombre del representante utilizado en este paquete."
++REPRESENTATIVE="Representante"
++DEFAULT="Defecto"
+ COUPONS_DESC="Esta opción se utiliza para habilitar cupones para el paquete."
+ COUPONS="Cupones"
+ SOFTPHONE_LINK="URL del softphone"
+Index: locale/fr/fr_wizard.ini
+===================================================================  
+--- locale/fr/fr_wizard.ini	(revision 16482)
++++ locale/fr/fr_wizard.ini	(working copy)
+@@ -112,6 +112,9 @@
+ PRODUCT="Produit"
+ SUBSCRIPTION_DESC="Le nom de l'abonnement utilisé dans ce paquet."
+ SUBSCRIPTION="Subscription"
++REPRESENTATIVE_DESC="Le nom du représentant utilisé dans ce package."
++REPRESENTATIVE="Représentant(e)"
++DEFAULT="Défaut"
+ COUPONS_DESC="The option is used to turn on cupons for paquet."
+ COUPONS="Coupons"
+ SOFTPHONE_LINK="Lien de l'application mobile"
+Index: templates/default/html/wizard.php
+=================================================================== 
+--- templates/default/html/wizard.php	(revision 16482)
++++ templates/default/html/wizard.php	(working copy)
+@@ -33,6 +33,7 @@
+ 	var products = '<?php echo $products; ?>',
+ 		subscriptions = '<?php echo $subscriptions; ?>',
+ 		ownerbatch = '<?php echo $ownerbatch; ?>',
++		representatives = '{}',
+ 		virtoffice = <?php echo $voffice; ?>,
+ 		adv_view = '<?php echo $adv_view;?>',
+ 		JS_SURE = '<?php echo $text['SURE'];?>',
+@@ -64,6 +65,7 @@
+ 				process_response({"result":virtoffice,act:'CheckVirtoffice'});
+ 			<?php endif;?>
+ 
++
+ 			<?php if ($products == '{}'):?>
+ 				var packs = [];
+ 				<?php if(count($packages) > 1 || !empty($packages[0])):
+@@ -91,6 +93,9 @@
+ 				<?php foreach($packages as $key => $package): ?>packs2.push({pack:$('#packDiv'+<?php echo $key;?>),currency:'<?php echo $package['template_account']['currency']; ?>'});<?php endforeach;?>
+ 				process_response({result:subscriptions,act:'GetSubscriptions',packs:packs2});
+ 			<?php endif;?>
++
++			// Get list of representatives
++			ajax_call({act:'GetRepresentatives'},'process_response');
+ 		});
+ </script>
+ <div style="margin:25px;" class="make-switch" data-off-label="basic" data-on-label="adv.">
+@@ -552,6 +557,21 @@
+ 					<span class="note<?php if($pack_total > 0):?> hidden<?php endif;?>"><?php echo $text['ENTER_ACCOUNT'];?></span>
+ 				</div>
+ 			</div>
++			<div class="optional-params<?php if(!empty($package)): echo ' hidden'; endif;?>">
++				<div id="packages-<?php echo $i; ?>-i_rep" class="form-group hidden" data-show="true" title="<?php echo $text['REPRESENTATIVE_DESC'];?>">
++					<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-i_rep-select"><?php echo $text['REPRESENTATIVE'];?></label>
++					<div class="col-lg-8 representative param-container">
++						<div class="select-container<?php if($pack_total == 0):?> hidden<?php endif;?>">
++							<input type="hidden" class="selected-option" value="<?php echo empty($package['subscriber']['i_rep'])?'':$package['subscriber']['i_rep']; ?>" />
++							<select id="packages-<?php echo $i; ?>-i_rep-select" name="packages[<?php echo $i; ?>][subscriber][i_rep]" class="form-control hidden to-clear representative-list" data-currency="<?php echo !empty($package['template_account']['currency'])?$package['template_account']['currency']:'';?>">
++								<option value="" selected><?php echo $text['NOT_SET']; ?></option>
++							</select>
++							<span class="loader"><img style="width:15px;" src="<?php echo $path; ?>img/loader.gif" /> <?php echo $text['PROCESSING']; ?></span>
++						</div>
++						<span class="note<?php if($pack_total > 0):?> hidden<?php endif;?>"><?php echo $text['ENTER_ACCOUNT'];?></span>
++					</div>
++				</div>
++			</div>
+ 			<div class="form-group" title="<?php echo $text['COUPONS_DESC'];?>">
+ 				<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-cupon_on" ><?php echo $text['COUPONS'];?></label>
+ 				<div class="col-lg-8 controls text-left">
+@@ -902,6 +922,11 @@
+ 					<td><?php echo $text['SUBSCRIPTION_DESC'];?></td>
+ 				</tr>
+ 				<tr>
++					<td><?php echo $text['REPRESENTATIVE'];?>:</td>
++					<td><?php echo $text['REPRESENTATIVE_DESC'];?></td>
++				</tr>
++
++				<tr>
+ 					<td align="center" colspan="2"><i>Result Info</i></td>
+ 				</tr>
+ 				<tr>
+Index: templates/default/js/wizard.js
+=================================================================== 
+--- templates/default/js/wizard.js	(revision 16482)
++++ templates/default/js/wizard.js	(working copy)
+@@ -26,6 +26,11 @@
+ 			ownerbatch = result;
+ 			var target = $('.batch-list')
+ 		}
++		else if(act == 'GetRepresentatives')
++		{
++			representatives = result;
++			var target = $('.representative-list')
++		}
+ 		else if(act == 'CheckVirtoffice')
+ 		{
+ 			virtoffice = Boolean(result);
+@@ -101,9 +106,10 @@
+ 			container = _this.closest('.has-feedback'),
+ 			pack = _this.closest('.package-container'),
+ 			prod_container = pack.find('.product'),
+-			subscr_container = pack.find('.suscription'),
++			subscr_container = pack.find('.subscription'),
++			rep_container = pack.find('.representative'),
+ 			buttons = [$('#submit-button'),$('#logout'),$('#add_package_button button')],
+-			containers = [prod_container,subscr_container];
++			containers = [prod_container,subscr_container,rep_container];
+ 			icons = {error:container.find('.error-sign'),success:container.find('.success-sign')};
+ 		container.addClass('has-'+status);
+ 		for (var i in icons)
+@@ -125,12 +131,20 @@
+ 		}
+ 		else
+ 		{
+-			var arguments1 = {packs:[{pack:pack,currency:currency}],act:'GetProducts',result:products},
+-				arguments2 = {packs:[{pack:pack,currency:currency}],act:'GetSubscriptions',result:subscriptions},
+-				args = [arguments1,arguments2];
++			var args = [
++				{ act:'GetProducts', result:products },
++				{ act:'GetSubscriptions', result:subscriptions },
++				{ act:'GetRepresentatives', result:representatives }
++			];
+ 			for(var i in args)
+ 			{
+-				process_response(args[i]);
++				process_response({
++					packs:[
++						{ pack:pack, currency:currency }
++					],
++					act:args[i]['act'],
++					result:args[i]['result']
++				});
+ 			}
+ 		}
+ 		_this.prop('disabled',false);
+@@ -340,9 +354,13 @@
+ 			$('#'+pack+'subscriber-alias').addClass('hidden');
+ 			$('#'+pack+'subscriber-alias_tr').addClass('hidden');
+ 			break;
+-			
++
+ 			break;
+ 	}
++
++	// Check representatives
++	var action = (!($('#'+pack+"val-owner").prop("disabled"))) ? 'removeClass' : 'addClass';
++	$('#'+pack+'i_rep')[action]('hidden');
+ }
+ 
+ function hide_dids(adv_view,pack)

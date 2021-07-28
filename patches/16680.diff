@@ -1,0 +1,26 @@
+Index: libs/submit.php
+===================================================================
+--- libs/submit.php	(revision 16679)
++++ libs/submit.php	(working copy)
+@@ -6,7 +6,7 @@
+ {
+ 	public static function subscriptionSubmit()
+ 	{
+-		global $config;
++		global $config, $mail;
+ 
+ 		if(!empty($GLOBALS['paypal_attempts']) && isset($GLOBALS['paypal_attempts'][$_REQUEST['subscription_token']]))
+ 		{
+Index: templates/default/html/result.php
+===================================================================
+--- templates/default/html/result.php	2020-01-14 08:39:24 UTC (revision 16679)
++++ templates/default/html/result.php	2020-01-14 12:59:21 UTC (working copy)
+@@ -147,7 +147,7 @@
+ 		<table class="table">
+ 			<tr>
+ 				<td width="50%" align="right"><strong><?php echo $text['SOFTPHONE_LINK']; ?></strong></td>
+-				<td align="left"><a class="form-control-static" target="_new" href="<?php echo $mail['phone_link']?>"><?php echo $text['DOWNLOAD_SOFTPHONE']; ?></a></td>
++				<td align="left"><a class="form-control-static" target="_new" href="<?php echo $softphone_link?>"><?php echo $text['DOWNLOAD_SOFTPHONE']; ?></a></td>
+ 			</tr>
+ 		</table>
+ 	</div>

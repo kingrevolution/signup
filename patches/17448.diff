@@ -1,0 +1,129 @@
+Index: locale/en/en_general.ini
+===================================================================
+--- locale/en/en_general.ini    (revision 17447)
++++ locale/en/en_general.ini    (working copy)
+@@ -13,6 +13,7 @@
+ JS_INVALID_CHARACTER="This character is forbidden"
+ JS_MAND_FIELD="field is mandatory"
+ JS_ENTER_VALID_EMAIL="Please enter a valid email address"
++JS_ENTER_VALID_CC_DATE="Please enter a valid credit card expiry date"
+ NOTE="Note"
+ ACCOUNT_OPTIONS="Choose Phone Number"
+ NOT_SET="Not set"
+Index: locale/es/es_general.ini
+===================================================================
+--- locale/es/es_general.ini    (revision 17447)
++++ locale/es/es_general.ini    (working copy)
+@@ -13,6 +13,7 @@
+ JS_INVALID_CHARACTER="Este carácter esta prohibido"
+ JS_MAND_FIELD="El campo es obligatorio"
+ JS_ENTER_VALID_EMAIL="Por favor ingrese una cuenta de correo electrónico valida"
++JS_ENTER_VALID_CC_DATE="Ingrese una fecha de vencimiento de la tarjeta de crédito válida"
+ NOTE="Nota"
+ ACCOUNT_OPTIONS="Parámetros adicionales"
+ NOT_SET="(seleccione una opción)"
+Index: templates/default/html/subscription.php
+===================================================================
+--- templates/default/html/subscription.php     (revision 17447)
++++ templates/default/html/subscription.php     (working copy)
+@@ -262,7 +262,7 @@
+                        <div class="form-group">
+                                <label class="col-lg-4 control-label"><?php echo $text['EXP_DATE']; ?> <span class="text-danger">*</span></label>
+                                <div class="col-lg-4">
+-                                       <select id="cc_month" class="form-control" name="cc_month">
++                                       <select id="cc_month" class="form-control mand" name="cc_month">
+                                        <?php
+                                        $i=1;
+                                        while ($i <= 12):
+@@ -274,7 +274,7 @@
+                                        </select>
+                                </div>
+                                <div class="col-lg-4">
+-                                       <select id="cc_year" class="form-control" name="cc_year">
++                                       <select id="cc_year" class="form-control mand" name="cc_year">
+                                        <?php
+                                        $cur_year = $new_year = intval(date('Y'));
+                                        while ($new_year <= $cur_year + 5):
+Index: templates/default/index.php
+===================================================================
+--- templates/default/index.php (revision 17447)
++++ templates/default/index.php (working copy)
+@@ -21,6 +21,7 @@
+                <script>
+                        var JS_MAND_CHECKBOX = '<?php echo $text['JS_MAND_CHECKBOX']; ?>',
+                                JS_ENTER_VALID_EMAIL = '<?php echo $text['JS_ENTER_VALID_EMAIL']; ?>',
++                               JS_ENTER_VALID_CC_DATE = '<?php echo $text['JS_ENTER_VALID_CC_DATE']; ?>',
+                                JS_SELECT_ITEM = '<?php echo $text['JS_SELECT_ITEM']; ?>',
+                                JS_INVALID_CHARACTER = '<?php echo $text['JS_INVALID_CHARACTER']; ?>',
+                                JS_MAND_FIELD = '<?php echo $text['JS_MAND_FIELD']; ?>',
+Index: templates/default/js/validator.js
+===================================================================
+--- templates/default/js/validator.js   (revision 17447)
++++ templates/default/js/validator.js   (working copy)
+@@ -67,6 +67,15 @@
+                                 if (el.find( "option:selected" ).val() == '') {
+                                        validate = false;
+                                        validator_baloon(el,'select');
++                                } else if (el.attr("id") == 'cc_month' || el.attr("id") == 'cc_year') {
++                                        if (el.attr("id") == 'cc_month') return;
++                                        var year = $(cc_year).val();
++                                        var month = $(cc_month).val();
++                                        var cc_date = validate_cc_date(year,month);
++                                        if (cc_date === false) {
++                                                validate = false;
++                                                validator_baloon(el,'cc_date');
++                                        }
+                                 }
+                        }
+                        else if('checkbox' == el.attr('type')) {
+@@ -145,6 +154,18 @@
+                if (signupwizard) return validate;
+                else return validate && validate_email_domain(el.val());
+        }
++
++       function validate_cc_date(year, month) {
++               var currentDate = new Date();
++               var year = year;
++               var month = month;
++               var dateToCheck = new Date(year, month, 0, 0, 0, 0, 0);
++               if (dateToCheck.getTime() < currentDate.getTime()) {
++                       return false;
++               } else {
++                       return true;
++               }
++       }
+ 
+        //email_domain_validation
+        function validate_email_domain(email){
+@@ -166,6 +187,10 @@
+                        var placement = 'right';
+                        var custom_style = '';
+                        switch (type) {
++                               case 'cc_date':
++                                       var text = JS_ENTER_VALID_CC_DATE;
++                                       var width = 250;
++                                       break;
+                                case 'email':
+                                        var text = JS_ENTER_VALID_EMAIL;
+                                        var width = 240;
+@@ -198,10 +223,20 @@
+                                        var width = text.length*6.5;
+                        }
+                        var showPopover = function () {
++                               if (el.attr('id') === 'cc_year') {
++                                       var month = $(cc_month);
++                                       month.popover('show');
++                                       month.attr("style","border-color:red; box-shadow:inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(233, 133, 102, 0.6)")
++                               }
+                            el.popover('show');
+                            el.attr("style","border-color:red; box-shadow:inset 0 1px 1px rgba(0,0,0,.075), 0 0 8px rgba(233, 133, 102, 0.6)")
+                        }
+                        , hidePopover = function () {
++                               if (el.attr('id') === 'cc_year') {
++                                       var month = $(cc_month);
++                                       month.popover('destroy');
++                                       month.removeAttr("style");
++                               }
+                            el.popover('destroy');
+                            el.removeAttr("style");
+                        };

@@ -1,0 +1,75 @@
+Index: libs/submit.php
+===================================================================
+--- libs/submit.php	(revision 16947)
++++ libs/submit.php	(working copy)
+@@ -802,7 +802,14 @@
+ 
+ 		$GetAccountInfoResponse = array();
+ 		$GetAccountInfoResponse = SignupHelper::MakeSoapCall('get_account_info','Account',array('id'=>$set_package['template_account']['id']));
+-
++		if ($set_package['ccf_copy'])
++		{
++			$GetTemplateCustomerCustomFieldsResponse = SignupHelper::MakeSoapCall('get_custom_fields_values','Customer',array('i_customer' => $GetAccountInfoResponse->account_info->i_customer));
++			if ($GetTemplateCustomerCustomFieldsResponse)
++			{
++				$UpdateAccountCutomFieldsValuesResponse = SignupHelper::MakeSoapCall('update_custom_fields_values', 'Customer', array('i_customer' => $i_customer,'custom_fields_values' => $GetTemplateCustomerCustomFieldsResponse->custom_fields_values));
++			}
++		}
+ 		$GetCustomerServiceFeaturesResponse = SignupHelper::MakeSoapCall('get_service_features','Customer',array('i_customer' => $GetAccountInfoResponse->account_info->i_customer));
+ 
+ 		foreach ($GetCustomerServiceFeaturesResponse->service_features as $value)
+@@ -1078,6 +1085,14 @@
+ 		$promo_code = empty($set_package['cupon_on']) ? NULL : $promo_code;
+ 		// processing account aliases
+ 		$GetAccountInfoResponse = SignupHelper::MakeSoapCall('get_account_info','Account',array('id'=>$set_package['template_account']['id']));
++		if (!empty($set_package['acf_copy']))
++		{
++			$GetTemplateAccountCustomFieldsResponse = SignupHelper::MakeSoapCall('get_custom_fields_values','Account',array('i_account' => $GetAccountInfoResponse->account_info->i_account));
++			if ($GetTemplateAccountCustomFieldsResponse)
++			{
++				$UpdateAccountCutomFieldsValuesResponse = SignupHelper::MakeSoapCall('update_custom_fields_values', 'Account', array('i_account' => $i_account,'custom_fields_values' => $GetTemplateAccountCustomFieldsResponse->custom_fields_values));
++			}
++		}
+ 		$GetAccountServiceFeaturesResponse = SignupHelper::MakeSoapCall('get_service_features','Account',array('i_account' => $GetAccountInfoResponse->account_info->i_account));
+ 
+ 		foreach ($GetAccountServiceFeaturesResponse->service_features as $value)
+Index: templates/default/html/wizard.php
+===================================================================
+--- templates/default/html/wizard.php	(revision 16947)
++++ templates/default/html/wizard.php	(working copy)
+@@ -309,6 +309,17 @@
+ 						<input type="hidden"<?php if(!empty($package['subscriber']['i_customer'])): echo ' disabled';endif;?> id="packages-<?php echo $i; ?>-val-owner" name="packages[<?php echo $i; ?>][owner]" value="on" />
+ 					</div>
+ 				</div>
++				<div class="form-group" title="<?php echo $text['CCF_COPY_DESC'];?>">
++					<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-ccf_copy" ><?php echo $text['CCF_COPY'];?></label>
++					<div class="col-lg-8 controls text-left">
++						<div class="make-switch">
++							<input type="checkbox" class="custom_switcher" id="packages-<?php echo $i; ?>-ccf_copy" <?php if(isset($package['ccf_copy'])) echo "checked";?> data-target='["packages-<?php echo $i; ?>-hidden-ccf_copy"]'>
++						</div>
++					</div>
++					<div id="packages-<?php echo $i; ?>-hidden-ccf_copy" data-search="packages-<?php echo $i; ?>-val-ccf_copy">
++						<input type="hidden"<?php if(!isset($package['ccf_copy'])): echo ' disabled';endif;?> id="packages-<?php echo $i; ?>-val-ccf_copy" name="packages[<?php echo $i; ?>][ccf_copy]" class="form-control" value="on" />
++					</div>
++				</div>
+ 				<div id="packages-<?php echo $i; ?>-virtoffice" class="form-group hidden" data-show="true" title="<?php echo $text['VIRTOFFICE_DESC']; ?>">
+ 					<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-virtoffice" ><?php echo $text['VIRTOFFICE']; ?></label>
+ 					<div class="col-lg-8 controls text-left">
+@@ -511,6 +522,17 @@
+ 						<span style="position:absolute;right:25px;top:8px;color:#A94442;" class="glyphicon glyphicon-remove error-sign form-control-feedback hidden"></span>
+ 					</div>
+ 				</div>
++				<div class="form-group" title="<?php echo $text['ACF_COPY_DESC'];?>">
++					<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-acf_copy" ><?php echo $text['ACF_COPY'];?></label>
++					<div class="col-lg-8 controls text-left">
++						<div class="make-switch">
++							<input type="checkbox" class="custom_switcher" id="packages-<?php echo $i; ?>-acf_copy" <?php if(isset($package['acf_copy'])) echo "checked";?> data-target='["packages-<?php echo $i; ?>-hidden-acf_copy"]'>
++						</div>
++					</div>
++					<div id="packages-<?php echo $i; ?>-hidden-acf_copy" data-search="packages-<?php echo $i; ?>-val-acf_copy">
++						<input type="hidden"<?php if(!isset($package['acf_copy'])): echo ' disabled';endif;?> id="packages-<?php echo $i; ?>-val-acf_copy" name="packages[<?php echo $i; ?>][acf_copy]" class="form-control" value="on" />
++					</div>
++				</div>
+ 			</div>
+ 			<div class="form-group" title="<?php echo $text['SHORT_DESC_OF_PACK']; ?>">
+ 				<label class="col-lg-4 control-label" for="packages-<?php echo $i; ?>-description"><?php echo $text['DESC'];?> <span class="text-danger">*</span></label>

@@ -1,0 +1,13 @@
+Index: libs/submit.php
+===================================================================
+--- libs/submit.php     (revision 16899)
++++ libs/submit.php     (working copy)
+@@ -248,7 +248,7 @@
+										{
+                                                $env = '0'.$env;
+										}
+-										$qrcode = 'csc:'.$GLOBALS['account_info']['id'].':'.$GLOBALS['account_info']['h323_password'].'@TG';
++										$qrcode = 'csc:'.rawurlencode($GLOBALS['account_info']['id']).':'.rawurlencode($GLOBALS['account_info']['h323_password']).'@TG';
+								}
+								$package_desc = empty($set_package[$GLOBALS['lang']]['description']) ? ( $pack = reset($set_package) and empty($pack['description']) ? $pack['description'] : '' ) : $set_package[$GLOBALS['lang']]['description'];
+								if(isset($GLOBALS["virtoffice"])) $subscriber["virtoffice"] = TRUE;

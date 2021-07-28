@@ -1,0 +1,22 @@
+Index: templates/default/html/result.php
+===================================================================
+--- templates/default/html/result.php	(revision 16569)
++++ templates/default/html/result.php	(working copy)
+@@ -125,7 +125,7 @@
+ 			</tr>
+ 			<tr>
+ 				<td width="50%" align="right"><strong><?php echo $text['PASSWORD']; ?></strong></td>
+-				<td align="left"><?php echo $customer_password;?></td>
++				<td align="left"><?php echo htmlspecialchars_decode($customer_password);?></td>
+ 			</tr>
+ 			<tr>
+ 				<td width="50%" align="right"><strong><?php echo $text['LINK']; ?></strong></td>
+@@ -133,7 +133,7 @@
+ 					<a href="javascript:document.getElementById('customer_url').submit();">Customer Self-Care</a>
+ 					<form id="customer_url" method="POST" action="<?php echo $references['customer_sci']; ?>" formtarget="_blank">
+ 						<input type="hidden" value="<?php echo $customer_login; ?>" name="pb_auth_user">
+-						<input type="hidden" value="<?php echo $customer_password; ?>" name="pb_auth_password">
++						<input type="hidden" value="<?php echo htmlspecialchars_decode($customer_password); ?>" name="pb_auth_password">
+ 					</form>
+ 				</td>
+ 			</tr>hod = ($type == 'Account') ? 'get_xdr_list' : 'get_customer_xdrs';
