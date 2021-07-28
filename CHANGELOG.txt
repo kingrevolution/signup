@@ -1,0 +1,83 @@
+2021-06-21:18406.diff:
+Added
+- "Customer Self-care Portal Login Source" option in the wizard;
+Modified
+- account login is now equal to an account number by default;
+- customer name is now 'firstname lastname' by default;
+- if "Customer Self-care Portal Login Source" is set to email_rand_digits, the customer name will be equal to the login 
+(e.g, happym@domain.com_8989 will be both name and login, designed for tests to prevent the duplicate customer name/login in the environment error);
+- 'add_package' function in the wizard.js to make it more readable.
+
+2020-12-18:17855.diff:
+Fixed
+- error reporting to both admin and end-user
+
+2020-11-27:17745.diff:
+Added
+- support for Stripe 3D Secure
+Fixed
+- quotes in ES translations;
+- PHP undefined notices for variables $filename, $clean_ob_data, $set_package['ccf_copy'].
+
+2020-08-20:17448.diff:
+Added
+- credit card 'Exp. Date' field validation
+
+2020-04-25:16973.diff:
+Fixed
+- make special chars in passwords (mainly < and >) display on the result page in signup
+
+2020-04-20:16948.diff:
+Added
+- two wizard per package options that allow to inherit custom fields values of the template accounts or their customer
+
+2020-04-10:16918.diff:
+Fixed
+ - when clicking on the Customer/Account Self Care links make it open in a new browser tab
+Styling
+ - change the tab name 'Account Options' to 'Choose Phone Number';
+ - change the tab name 'Account Info' to 'Subscriber Info';
+ - make 'You are almost done' on the Result page slightly smaller;
+ - replace 'registration' with 'signing up' on the Result page.
+
+2020-04-03:16900.diff:
+Fixed
+ - Register accounts that have special characters in login/password using QR code
+
+2020-02-17:16800.diff:
+Fixed
+ - Creating a customer name based on email length
+
+2020-02-10:16777.diff:
+Added
+ - extract MoH from template account
+
+2020-01-25:16709.diff:
+Adjusted
+ - Create QR code without env number
+ 
+2020-01-24:16680.diff:
+Fixed
+ - Mobile softphone link
+
+2019-12-19:16628.diff:
+Fixed
+ - Ordering DID using the DIDww module
+
+2019-12-02:16589.diff:
+Fixed
+ - PayPal payments
+
+2019-11-26:16570.diff:
+Added
+ -htmlspecialchars_decode for customer password
+
+2019-11-04:16483.diff:
+Added
+ - The possibility to assign representatives to created customers, None,Default(take from template customer),Representative(selected name) options are available.
+
+Removed
+ - Not needed spaces in libs/submit.php
+
+Fixed
+ - Subscription class in JS logic

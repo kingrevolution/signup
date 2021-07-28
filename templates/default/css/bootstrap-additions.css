@@ -1,0 +1,7 @@
+.spacer2{height:2px;width:100%;font-size:0;margin:0;padding:0;border:0;display:block;}
+.spacer5{height:5px;width:100%;font-size:0;margin:0;padding:0;border:0;display:block;}
+.spacer10{height:10px;width:100%;font-size:0;margin:0;padding:0;border:0;display:block;}
+.cursor-default{cursor:default;}
+.has-switch span,.has-switch label{height:29px;}
+li:not(.active)>.cursor-default:hover{color:#428bca !important;background-color:transparent !important;border-color:transparent transparent #dddddd !important;}
+li:not(.active)>.cursor-default.text-muted:hover{color:#999999 !important;}
